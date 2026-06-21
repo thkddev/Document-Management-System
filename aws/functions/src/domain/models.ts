@@ -1,0 +1,106 @@
+export const userRoles = ['EMPLOYEE', 'DEPARTMENT_ADMIN', 'SYSTEM_ADMIN'] as const;
+
+export type UserRole = (typeof userRoles)[number];
+
+export interface CurrentUser {
+  userId: string;
+  email: string;
+  displayName: string;
+  departmentId: string;
+  roles: UserRole[];
+}
+
+export const documentClassifications = [
+  'PUBLIC',
+  'INTERNAL',
+  'CONFIDENTIAL',
+  'RESTRICTED',
+] as const;
+
+export type DocumentClassification = (typeof documentClassifications)[number];
+
+export const documentStatuses = [
+  'UPLOAD_PENDING',
+  'UPLOADED',
+  'VALIDATING',
+  'SCANNING',
+  'READY',
+  'INFECTED',
+  'REJECTED',
+  'FAILED',
+] as const;
+
+export type DocumentStatus = (typeof documentStatuses)[number];
+
+export interface CreateUploadIntentRequest {
+  title: string;
+  departmentId: string;
+  classification: DocumentClassification;
+  originalFileName: string;
+  contentType: string;
+  sizeBytes: number;
+  checksumSha256: string;
+  tags?: string[];
+}
+
+export interface UploadIntent {
+  uploadIntentId: string;
+  documentId: string;
+  versionNumber: number;
+  uploadUrl: string;
+  expiresAt: string;
+  uploadHeaders: Record<string, string>;
+}
+
+export interface DocumentSummary {
+  documentId: string;
+  title: string;
+  originalFileName: string;
+  contentType: string;
+  classification: DocumentClassification;
+  departmentId: string;
+  ownerId: string;
+  ownerEmail: string;
+  sizeBytes: number;
+  currentVersion: number;
+  status: DocumentStatus;
+  statusReason?: string;
+  updatedAt: string;
+}
+
+export interface DocumentDetail extends DocumentSummary {
+  createdAt: string;
+}
+
+export interface DownloadIntent {
+  downloadUrl: string;
+  expiresAt: string;
+  fileName: string;
+}
+
+export interface DocumentPrincipal {
+  userId: string;
+  departmentId: string;
+  roles: UserRole[];
+}
+
+export interface ListDocumentsResponse {
+  items: DocumentSummary[];
+}
+
+export const auditActions = [
+  'UPLOAD_INTENT_CREATED',
+  'UPLOAD_VALIDATED',
+  'MALWARE_SCAN_STARTED',
+  'DOCUMENT_READY',
+  'DOCUMENT_REJECTED',
+  'MALWARE_DETECTED',
+  'PROCESSING_FAILED',
+  'MESSAGE_DEAD_LETTERED',
+  'DOCUMENT_DOWNLOAD_REQUESTED',
+] as const;
+
+export type AuditAction = (typeof auditActions)[number];
+export type AuditActorType = 'USER' | 'SYSTEM';
+export type AuditSource = 'API' | 'UPLOAD_PROCESSOR' | 'DLQ_PROCESSOR';
+export type AuditOutcome = 'SUCCESS' | 'REJECTED' | 'FAILED';

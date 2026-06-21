@@ -1,0 +1,32 @@
+{
+  "name": "dms-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "frontend",
+    "aws/functions",
+    "aws/infrastructure"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace @dms/frontend",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "cdk:synth": "npm run synth --workspace @dms/infrastructure"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "@types/node": "^25.5.0",
+    "aws-cdk": "^2.1128.0",
+    "eslint": "^9.39.4",
+    "prettier": "^3.8.4",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.61.1",
+    "vitest": "^4.1.9"
+  }
+}

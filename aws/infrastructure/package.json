@@ -1,0 +1,21 @@
+{
+  "name": "@dms/infrastructure",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit --pretty false",
+    "pretest": "npm run build --workspace @dms/functions",
+    "test": "vitest run",
+    "presynth": "npm run build --workspace @dms/functions",
+    "synth": "cdk synth --app \"node --import tsx bin/dms.ts\""
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.260.0",
+    "constructs": "^10.6.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.1"
+  }
+}

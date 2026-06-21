@@ -1,0 +1,14 @@
+node_modules/
+dist/
+coverage/
+cdk.out*/
+**/cdk.out*/
+.env
+.env.*
+!.env.example
+*.log
+*.tsbuildinfo
+.DS_Store
+Thumbs.db
+frontend/public/runtime-config.json
+.superpowers/

@@ -1,0 +1,38 @@
+[
+  {
+    "documentId": "064ecda0-f5c9-4fab-98f1-d16491ce6818",
+    "title": "Quy trình tiếp nhận nhân sự 2026",
+    "departmentId": "HR",
+    "ownerDisplayName": "Nguyễn An",
+    "classification": "INTERNAL",
+    "contentType": "application/pdf",
+    "sizeBytes": 1843200,
+    "currentVersion": 4,
+    "status": "READY",
+    "updatedAt": "2026-06-18T09:30:00Z"
+  },
+  {
+    "documentId": "8c69863f-c819-4f01-ab1c-b918d34eb04a",
+    "title": "Đặc tả thiết kế hệ thống DMS",
+    "departmentId": "TECH",
+    "ownerDisplayName": "Trần Minh",
+    "classification": "CONFIDENTIAL",
+    "contentType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "sizeBytes": 4386816,
+    "currentVersion": 7,
+    "status": "READY",
+    "updatedAt": "2026-06-19T03:15:00Z"
+  },
+  {
+    "documentId": "a30f8ddf-4818-450f-a7d9-06ba27596c7a",
+    "title": "Báo giá khách hàng mẫu - Q3",
+    "departmentId": "SALES",
+    "ownerDisplayName": "Lê Hà",
+    "classification": "RESTRICTED",
+    "contentType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "sizeBytes": 972800,
+    "currentVersion": 2,
+    "status": "SCANNING",
+    "updatedAt": "2026-06-19T05:45:00Z"
+  }
+]

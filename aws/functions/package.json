@@ -1,0 +1,23 @@
+{
+  "name": "@dms/functions",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && node -e \"require('node:fs').writeFileSync('dist/package.json', JSON.stringify({type:'module'}))\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit --pretty false",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.162"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.1072.0",
+    "@aws-sdk/client-s3": "^3.1072.0",
+    "@aws-sdk/client-sns": "^3.1073.0",
+    "@aws-sdk/s3-request-presigner": "^3.1072.0",
+    "@aws-sdk/util-dynamodb": "^3.996.5",
+    "file-type": "^22.0.1"
+  }
+}

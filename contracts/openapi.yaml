@@ -1,0 +1,305 @@
+openapi: 3.1.0
+info:
+  title: DMS API
+  version: 0.1.0
+  description: Contract ban đầu cho React Frontend và AWS Lambda.
+servers:
+  - url: https://api.example.com
+    description: Placeholder; được thay bằng CDK output theo môi trường.
+security:
+  - cognitoJwt: []
+paths:
+  /me:
+    get:
+      operationId: getCurrentUser
+      summary: Lấy thông tin người dùng hiện tại
+      responses:
+        '200':
+          description: Thông tin người dùng đã xác thực
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrentUser'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /documents:
+    get:
+      operationId: listDocuments
+      summary: Liệt kê tối đa 50 tài liệu gần nhất trong phòng ban của người dùng
+      responses:
+        '200':
+          description: Danh sách tài liệu
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DocumentSummary'
+  /documents/{documentId}:
+    parameters:
+      - $ref: '#/components/parameters/DocumentId'
+    get:
+      operationId: getDocumentDetail
+      summary: Lấy metadata an toàn của một tài liệu có quyền truy cập
+      responses:
+        '200':
+          description: Chi tiết tài liệu
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentDetail'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /documents/{documentId}/download-intents:
+    parameters:
+      - $ref: '#/components/parameters/DocumentId'
+    post:
+      operationId: createDownloadIntent
+      summary: Tạo liên kết tải tài liệu READY có hiệu lực 5 phút
+      responses:
+        '201':
+          description: Download intent đã được tạo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DownloadIntent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /documents/upload-intents:
+    post:
+      operationId: createUploadIntent
+      summary: Tạo presigned upload URL sau khi kiểm tra metadata
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUploadIntentRequest'
+      responses:
+        '201':
+          description: Upload intent đã được tạo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadIntent'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+components:
+  parameters:
+    DocumentId:
+      name: documentId
+      in: path
+      required: true
+      description: Mã tài liệu
+      schema:
+        type: string
+        format: uuid
+  securitySchemes:
+    cognitoJwt:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    CurrentUser:
+      type: object
+      required: [userId, email, displayName, departmentId, roles]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        displayName:
+          type: string
+        departmentId:
+          type: string
+        roles:
+          type: array
+          items:
+            type: string
+            enum: [EMPLOYEE, DEPARTMENT_ADMIN, SYSTEM_ADMIN]
+    DocumentSummary:
+      type: object
+      required:
+        [
+          documentId,
+          title,
+          originalFileName,
+          contentType,
+          classification,
+          departmentId,
+          ownerId,
+          ownerEmail,
+          sizeBytes,
+          currentVersion,
+          status,
+          updatedAt,
+        ]
+      properties:
+        documentId:
+          type: string
+          format: uuid
+        title:
+          type: string
+        originalFileName:
+          type: string
+        contentType:
+          type: string
+        departmentId:
+          type: string
+        classification:
+          type: string
+          enum: [PUBLIC, INTERNAL, CONFIDENTIAL, RESTRICTED]
+        ownerId:
+          type: string
+        ownerEmail:
+          type: string
+          format: email
+        sizeBytes:
+          type: integer
+          minimum: 1
+        currentVersion:
+          type: integer
+          minimum: 1
+        status:
+          type: string
+          enum: [UPLOAD_PENDING, UPLOADED, VALIDATING, SCANNING, READY, INFECTED, REJECTED, FAILED]
+        statusReason:
+          type: string
+          description: Lý do an toàn dành cho người dùng khi tài liệu bị từ chối hoặc xử lý lỗi.
+        updatedAt:
+          type: string
+          format: date-time
+    DocumentDetail:
+      allOf:
+        - $ref: '#/components/schemas/DocumentSummary'
+        - type: object
+          required: [createdAt]
+          properties:
+            createdAt:
+              type: string
+              format: date-time
+    DownloadIntent:
+      type: object
+      required: [downloadUrl, expiresAt, fileName]
+      properties:
+        downloadUrl:
+          type: string
+          format: uri
+        expiresAt:
+          type: string
+          format: date-time
+        fileName:
+          type: string
+    CreateUploadIntentRequest:
+      type: object
+      required:
+        [
+          title,
+          departmentId,
+          classification,
+          originalFileName,
+          contentType,
+          sizeBytes,
+          checksumSha256,
+        ]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        departmentId:
+          type: string
+        classification:
+          type: string
+          enum: [PUBLIC, INTERNAL, CONFIDENTIAL, RESTRICTED]
+        originalFileName:
+          type: string
+          maxLength: 255
+        contentType:
+          type: string
+        sizeBytes:
+          type: integer
+          minimum: 1
+        checksumSha256:
+          type: string
+          pattern: '^[a-fA-F0-9]{64}$'
+        tags:
+          type: array
+          maxItems: 20
+          items:
+            type: string
+            maxLength: 40
+    UploadIntent:
+      type: object
+      required: [uploadIntentId, documentId, versionNumber, uploadUrl, expiresAt, uploadHeaders]
+      properties:
+        uploadIntentId:
+          type: string
+          format: uuid
+        documentId:
+          type: string
+          format: uuid
+        versionNumber:
+          type: integer
+        uploadUrl:
+          type: string
+          format: uri
+        expiresAt:
+          type: string
+          format: date-time
+        uploadHeaders:
+          type: object
+          additionalProperties:
+            type: string
+    Error:
+      type: object
+      required: [code, message, requestId]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        requestId:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+  responses:
+    BadRequest:
+      description: Request không hợp lệ
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Thiếu hoặc sai thông tin xác thực
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Không tìm thấy tài liệu hoặc không có quyền truy cập
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflict:
+      description: Trạng thái tài liệu chưa cho phép thao tác
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
