@@ -19,6 +19,10 @@ export const documentClassifications = [
 
 export type DocumentClassification = (typeof documentClassifications)[number];
 
+export const documentAccessScopes = ['DEPARTMENT', 'ALL_EMPLOYEES'] as const;
+
+export type DocumentAccessScope = (typeof documentAccessScopes)[number];
+
 export const documentStatuses = [
   'UPLOAD_PENDING',
   'UPLOADED',
@@ -36,6 +40,7 @@ export interface CreateUploadIntentRequest {
   title: string;
   departmentId: string;
   classification: DocumentClassification;
+  accessScope: DocumentAccessScope;
   originalFileName: string;
   contentType: string;
   sizeBytes: number;
@@ -61,6 +66,7 @@ export interface DocumentSummary {
   departmentId: string;
   ownerId: string;
   ownerEmail: string;
+  accessScope: DocumentAccessScope;
   sizeBytes: number;
   currentVersion: number;
   status: DocumentStatus;

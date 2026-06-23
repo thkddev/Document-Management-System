@@ -6,7 +6,7 @@ import {
   parseCreateUploadIntentRequest,
   UploadIntentValidationError,
 } from '../src/domain/upload-policy.js';
-import { createUploadIntent } from '../src/services/upload-intents.js';
+import { createUploadIntent, UploadIntentForbiddenError } from '../src/services/upload-intents.js';
 
 const user: CurrentUser = {
   userId: '064ecda0-f5c9-4fab-98f1-d16491ce6818',
@@ -31,8 +31,18 @@ describe('upload intent policy', () => {
     expect(parseCreateUploadIntentRequest(validRequest)).toMatchObject({
       title: 'Đặc tả DMS',
       classification: 'CONFIDENTIAL',
+      accessScope: 'DEPARTMENT',
       checksumSha256: 'a'.repeat(64),
     });
+  });
+
+  it('rejects invalid access scope', () => {
+    expect(() =>
+      parseCreateUploadIntentRequest({
+        ...validRequest,
+        accessScope: 'EVERYONE',
+      }),
+    ).toThrow(UploadIntentValidationError);
   });
 
   it('rejects unsupported file types and oversize files', () => {
@@ -90,5 +100,56 @@ describe('createUploadIntent', () => {
         }),
       }),
     );
+  });
+
+  it('rejects ALL_EMPLOYEES upload intent from non System Admin', async () => {
+    const dynamodb = { send: vi.fn() } as unknown as Pick<DynamoDBClient, 'send'>;
+    const s3 = new S3Client({
+      region: 'ap-southeast-1',
+      credentials: {
+        accessKeyId: 'test',
+        secretAccessKey: 'test',
+      },
+    });
+
+    await expect(
+      createUploadIntent(
+        parseCreateUploadIntentRequest({ ...validRequest, accessScope: 'ALL_EMPLOYEES' }),
+        user,
+        {
+          dynamodb,
+          s3,
+          tableName: 'dms-test',
+          quarantineBucketName: 'dms-quarantine-test',
+        },
+      ),
+    ).rejects.toBeInstanceOf(UploadIntentForbiddenError);
+  });
+
+  it('allows System Admin to create ALL_EMPLOYEES upload intent', async () => {
+    const send = vi.fn().mockResolvedValue({});
+    const dynamodb = { send } as unknown as Pick<DynamoDBClient, 'send'>;
+    const s3 = new S3Client({
+      region: 'ap-southeast-1',
+      credentials: {
+        accessKeyId: 'test',
+        secretAccessKey: 'test',
+      },
+    });
+    const ids = ['upload-1', 'document-1'];
+
+    await createUploadIntent(
+      parseCreateUploadIntentRequest({ ...validRequest, accessScope: 'ALL_EMPLOYEES' }),
+      { ...user, roles: ['SYSTEM_ADMIN'] },
+      {
+        dynamodb,
+        s3,
+        tableName: 'dms-test',
+        quarantineBucketName: 'dms-quarantine-test',
+        createId: () => ids.shift() ?? 'fallback-id',
+      },
+    );
+
+    expect(send).toHaveBeenCalledTimes(3);
   });
 });

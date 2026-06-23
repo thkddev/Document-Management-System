@@ -1,7 +1,14 @@
 import type { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { marshall } from '@aws-sdk/util-dynamodb';
 import { describe, expect, it, vi } from 'vitest';
-import { listDocumentsByDepartment } from '../src/services/documents.js';
+import type { DocumentPrincipal } from '../src/domain/models.js';
+import { listAuthorizedDocuments } from '../src/services/documents.js';
+
+const principal: DocumentPrincipal = {
+  userId: 'user-1',
+  departmentId: 'TECH',
+  roles: ['EMPLOYEE'],
+};
 
 const documentRecord = {
   entityType: 'Document',
@@ -10,6 +17,7 @@ const documentRecord = {
   originalFileName: 'bao-cao.pdf',
   contentType: 'application/pdf',
   classification: 'INTERNAL',
+  accessScope: 'DEPARTMENT',
   departmentId: 'TECH',
   ownerId: 'user-1',
   ownerEmail: 'user@example.com',
@@ -19,27 +27,80 @@ const documentRecord = {
   updatedAt: '2026-06-20T06:30:28.640Z',
 };
 
-describe('listDocumentsByDepartment', () => {
-  it('query GSI1 theo phòng ban và trả tài liệu hợp lệ', async () => {
+describe('listAuthorizedDocuments', () => {
+  it('scan document records và trả tài liệu user có quyền đọc', async () => {
     const send = vi.fn().mockResolvedValue({ Items: [marshall(documentRecord)] });
 
-    const items = await listDocumentsByDepartment('TECH', {
+    const items = await listAuthorizedDocuments(principal, {
       dynamodb: { send } as unknown as Pick<DynamoDBClient, 'send'>,
       tableName: 'dms-test',
     });
 
-    expect(items).toEqual([expect.objectContaining({ documentId: 'document-1', status: 'SCANNING' })]);
-    const command = send.mock.calls[0]?.[0] as { input: Record<string, unknown> };
-    expect(command.input).toMatchObject({
+    expect(items).toEqual([
+      expect.objectContaining({
+        documentId: 'document-1',
+        accessScope: 'DEPARTMENT',
+        status: 'SCANNING',
+      }),
+    ]);
+    expect((send.mock.calls[0]?.[0] as { input: Record<string, unknown> }).input).toMatchObject({
       TableName: 'dms-test',
-      IndexName: 'gsi1',
-      ScanIndexForward: false,
+      FilterExpression: 'entityType = :documentType',
       Limit: 50,
       ExpressionAttributeValues: {
-        ':department': { S: 'DEPT#TECH' },
         ':documentType': { S: 'Document' },
       },
     });
+  });
+
+  it('cho user thường thấy tài liệu toàn công ty khác phòng ban', async () => {
+    const send = vi.fn().mockResolvedValue({
+      Items: [
+        marshall({
+          ...documentRecord,
+          documentId: 'document-all',
+          departmentId: 'HR',
+          ownerId: 'hr-owner',
+          accessScope: 'ALL_EMPLOYEES',
+        }),
+      ],
+    });
+
+    const items = await listAuthorizedDocuments(principal, {
+      dynamodb: { send } as unknown as Pick<DynamoDBClient, 'send'>,
+      tableName: 'dms-test',
+    });
+
+    expect(items).toEqual([expect.objectContaining({ documentId: 'document-all' })]);
+  });
+
+  it('ẩn tài liệu phòng ban khác nếu không phải toàn công ty', async () => {
+    const send = vi.fn().mockResolvedValue({
+      Items: [marshall({ ...documentRecord, departmentId: 'HR', ownerId: 'hr-owner' })],
+    });
+
+    await expect(
+      listAuthorizedDocuments(principal, {
+        dynamodb: { send } as unknown as Pick<DynamoDBClient, 'send'>,
+        tableName: 'dms-test',
+      }),
+    ).resolves.toEqual([]);
+  });
+
+  it('System Admin thấy tài liệu phòng ban khác', async () => {
+    const send = vi.fn().mockResolvedValue({
+      Items: [marshall({ ...documentRecord, departmentId: 'HR', ownerId: 'hr-owner' })],
+    });
+
+    const items = await listAuthorizedDocuments(
+      { userId: 'admin-1', departmentId: 'ADMIN', roles: ['SYSTEM_ADMIN'] },
+      {
+        dynamodb: { send } as unknown as Pick<DynamoDBClient, 'send'>,
+        tableName: 'dms-test',
+      },
+    );
+
+    expect(items).toHaveLength(1);
   });
 
   it('bỏ qua bản ghi sai cấu trúc', async () => {
@@ -47,7 +108,7 @@ describe('listDocumentsByDepartment', () => {
       Items: [marshall(documentRecord), marshall({ ...documentRecord, status: 'UNKNOWN' })],
     });
 
-    const items = await listDocumentsByDepartment('TECH', {
+    const items = await listAuthorizedDocuments(principal, {
       dynamodb: { send } as unknown as Pick<DynamoDBClient, 'send'>,
       tableName: 'dms-test',
     });
@@ -64,7 +125,7 @@ describe('listDocumentsByDepartment', () => {
       })
       .mockResolvedValueOnce({ Items: [marshall(documentRecord)] });
 
-    const items = await listDocumentsByDepartment('TECH', {
+    const items = await listAuthorizedDocuments(principal, {
       dynamodb: { send } as unknown as Pick<DynamoDBClient, 'send'>,
       tableName: 'dms-test',
     });
@@ -89,7 +150,7 @@ describe('listDocumentsByDepartment', () => {
       ],
     });
 
-    const [item] = await listDocumentsByDepartment('TECH', {
+    const [item] = await listAuthorizedDocuments(principal, {
       dynamodb: { send } as unknown as Pick<DynamoDBClient, 'send'>,
       tableName: 'dms-test',
     });

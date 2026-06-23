@@ -509,7 +509,7 @@ select:focus-visible {
 
 .upload-form {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) 160px minmax(180px, 1fr) auto;
+  grid-template-columns: minmax(180px, 1fr) 160px 180px minmax(180px, 1fr) auto;
   gap: 12px;
   align-items: end;
 }
@@ -852,6 +852,16 @@ select:focus-visible {
 .classification--Công-khai {
   color: #315b78;
   background: #dfeaf0;
+}
+
+.access-scope-label {
+  padding: 2px 5px;
+  color: #285b62;
+  background: #dcebec;
+  font-family: 'Cascadia Mono', monospace;
+  font-size: 7px;
+  font-weight: 600;
+  text-transform: uppercase;
 }
 
 .document-owner strong,

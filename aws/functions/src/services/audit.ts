@@ -16,6 +16,7 @@ export interface WriteAuditEventInput {
   requestId?: string;
   messageId?: string;
   reason?: string;
+  details?: Record<string, string | number | boolean>;
 }
 
 export interface AuditDeps {
@@ -49,6 +50,7 @@ export async function writeAuditEvent(
   if (input.requestId) item.requestId = input.requestId;
   if (input.messageId) item.messageId = input.messageId;
   if (input.reason) item.reason = input.reason;
+  if (input.details) item.details = input.details;
 
   try {
     await deps.dynamodb.send(

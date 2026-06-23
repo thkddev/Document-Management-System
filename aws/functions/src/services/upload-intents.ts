@@ -6,6 +6,13 @@ import { marshall } from '@aws-sdk/util-dynamodb';
 import type { CreateUploadIntentRequest, CurrentUser, UploadIntent } from '../domain/models.js';
 import { writeAuditEvent } from './audit.js';
 
+export class UploadIntentForbiddenError extends Error {
+  constructor(message = 'Bạn không có quyền phát hành tài liệu cho toàn bộ nhân viên.') {
+    super(message);
+    this.name = 'UploadIntentForbiddenError';
+  }
+}
+
 export interface UploadIntentServiceDeps {
   dynamodb: Pick<DynamoDBClient, 'send'>;
   s3: S3Client;
@@ -60,6 +67,7 @@ function buildUploadIntentItem(
     departmentId: request.departmentId,
     ownerId: user.userId,
     ownerEmail: user.email,
+    accessScope: request.accessScope,
     classification: request.classification,
     originalFileName: request.originalFileName,
     contentType: request.contentType,
@@ -94,6 +102,7 @@ function buildDocumentItem(
     departmentId: request.departmentId,
     ownerId: user.userId,
     ownerEmail: user.email,
+    accessScope: request.accessScope,
     uploadIntentId: record.uploadIntentId,
     classification: request.classification,
     currentVersion: record.versionNumber,
@@ -119,6 +128,10 @@ export async function createUploadIntent(
   user: CurrentUser,
   deps: UploadIntentServiceDeps,
 ): Promise<UploadIntent> {
+  if (request.accessScope === 'ALL_EMPLOYEES' && !user.roles.includes('SYSTEM_ADMIN')) {
+    throw new UploadIntentForbiddenError();
+  }
+
   const now = deps.now?.() ?? new Date();
   const presignSeconds = deps.presignSeconds ?? 900;
   const expiresAt = new Date(now.getTime() + presignSeconds * 1000).toISOString();
@@ -183,6 +196,7 @@ export async function createUploadIntent(
       outcome: 'SUCCESS',
       eventId: `upload-${uploadIntentId}-created`,
       occurredAt: record.createdAt,
+      details: { accessScope: request.accessScope },
       ...(deps.requestId ? { requestId: deps.requestId } : {}),
     },
     deps,

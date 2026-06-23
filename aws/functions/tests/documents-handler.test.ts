@@ -1,11 +1,11 @@
 import type { APIGatewayProxyEvent } from 'aws-lambda';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { listDocumentsByDepartment } = vi.hoisted(() => ({
-  listDocumentsByDepartment: vi.fn(),
+const { listAuthorizedDocuments } = vi.hoisted(() => ({
+  listAuthorizedDocuments: vi.fn(),
 }));
 
-vi.mock('../src/services/documents.js', () => ({ listDocumentsByDepartment }));
+vi.mock('../src/services/documents.js', () => ({ listAuthorizedDocuments }));
 
 const { handler } = await import('../src/handlers/documents.js');
 
@@ -58,22 +58,26 @@ function createEvent(claims?: Record<string, unknown>): APIGatewayProxyEvent {
 describe('GET /documents handler', () => {
   beforeEach(() => {
     process.env.TABLE_NAME = 'dms-test';
-    listDocumentsByDepartment.mockReset();
+    listAuthorizedDocuments.mockReset();
   });
 
-  it('trả danh sách theo phòng ban trong Cognito claims', async () => {
-    listDocumentsByDepartment.mockResolvedValue([{ documentId: 'document-1' }]);
+  it('trả danh sách theo quyền trong Cognito claims', async () => {
+    listAuthorizedDocuments.mockResolvedValue([{ documentId: 'document-1' }]);
 
     const response = await handler(
-      createEvent({ sub: 'user-1', 'custom:departmentId': 'TECH' }),
+      createEvent({
+        sub: 'user-1',
+        'custom:departmentId': 'TECH',
+        'cognito:groups': 'EMPLOYEE',
+      }),
       {} as never,
       () => undefined,
     );
 
     expect(response?.statusCode).toBe(200);
     expect(JSON.parse(response?.body ?? '{}')).toEqual({ items: [{ documentId: 'document-1' }] });
-    expect(listDocumentsByDepartment).toHaveBeenCalledWith(
-      'TECH',
+    expect(listAuthorizedDocuments).toHaveBeenCalledWith(
+      { userId: 'user-1', departmentId: 'TECH', roles: ['EMPLOYEE'] },
       expect.objectContaining({ tableName: 'dms-test' }),
     );
   });
@@ -86,6 +90,6 @@ describe('GET /documents handler', () => {
     );
 
     expect(response?.statusCode).toBe(401);
-    expect(listDocumentsByDepartment).not.toHaveBeenCalled();
+    expect(listAuthorizedDocuments).not.toHaveBeenCalled();
   });
 });

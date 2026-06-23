@@ -1,6 +1,7 @@
 import { apiFetch } from './api-client';
 
 export type DocumentClassification = 'PUBLIC' | 'INTERNAL' | 'CONFIDENTIAL' | 'RESTRICTED';
+export type DocumentAccessScope = 'DEPARTMENT' | 'ALL_EMPLOYEES';
 
 export type DocumentStatus =
   | 'UPLOAD_PENDING'
@@ -21,6 +22,7 @@ export interface DocumentSummary {
   departmentId: string;
   ownerId: string;
   ownerEmail: string;
+  accessScope: DocumentAccessScope;
   sizeBytes: number;
   currentVersion: number;
   status: DocumentStatus;

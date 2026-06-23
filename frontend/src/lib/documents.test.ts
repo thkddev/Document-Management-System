@@ -16,6 +16,7 @@ const document = {
   departmentId: 'TECH',
   ownerId: 'user-1',
   ownerEmail: 'user@example.com',
+  accessScope: 'DEPARTMENT' as const,
   sizeBytes: 1024,
   currentVersion: 1,
   status: 'READY' as const,

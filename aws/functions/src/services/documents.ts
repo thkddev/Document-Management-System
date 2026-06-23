@@ -1,13 +1,16 @@
 import {
-  QueryCommand,
+  ScanCommand,
   type AttributeValue,
   type DynamoDBClient,
 } from '@aws-sdk/client-dynamodb';
 import { unmarshall } from '@aws-sdk/util-dynamodb';
 import {
   documentClassifications,
+  documentAccessScopes,
   documentStatuses,
+  type DocumentAccessScope,
   type DocumentClassification,
+  type DocumentPrincipal,
   type DocumentStatus,
   type DocumentSummary,
 } from '../domain/models.js';
@@ -36,6 +39,7 @@ function parseDocumentSummary(record: Record<string, unknown>): DocumentSummary 
   const departmentId = stringValue(record, 'departmentId');
   const ownerId = stringValue(record, 'ownerId');
   const ownerEmail = stringValue(record, 'ownerEmail');
+  const accessScope = stringValue(record, 'accessScope') ?? 'DEPARTMENT';
   const sizeBytes = numberValue(record, 'sizeBytes');
   const currentVersion = numberValue(record, 'currentVersion');
   const status = stringValue(record, 'status');
@@ -57,6 +61,7 @@ function parseDocumentSummary(record: Record<string, unknown>): DocumentSummary 
     !departmentId ||
     !ownerId ||
     !ownerEmail ||
+    !documentAccessScopes.includes(accessScope as DocumentAccessScope) ||
     sizeBytes === null ||
     currentVersion === null ||
     !status ||
@@ -75,6 +80,7 @@ function parseDocumentSummary(record: Record<string, unknown>): DocumentSummary 
     departmentId,
     ownerId,
     ownerEmail,
+    accessScope: accessScope as DocumentAccessScope,
     sizeBytes,
     currentVersion,
     status: status as DocumentStatus,
@@ -86,24 +92,26 @@ function parseDocumentSummary(record: Record<string, unknown>): DocumentSummary 
   return summary;
 }
 
-export async function listDocumentsByDepartment(
-  departmentId: string,
+function canReadSummary(document: DocumentSummary, principal: DocumentPrincipal): boolean {
+  if (principal.roles.includes('SYSTEM_ADMIN')) return true;
+  if (document.accessScope === 'ALL_EMPLOYEES') return true;
+  return document.ownerId === principal.userId || document.departmentId === principal.departmentId;
+}
+
+export async function listAuthorizedDocuments(
+  principal: DocumentPrincipal,
   deps: ListDocumentsDeps,
 ): Promise<DocumentSummary[]> {
   const items: DocumentSummary[] = [];
   let exclusiveStartKey: Record<string, AttributeValue> | undefined;
   do {
     const response = await deps.dynamodb.send(
-      new QueryCommand({
+      new ScanCommand({
         TableName: deps.tableName,
-        IndexName: 'gsi1',
-        KeyConditionExpression: 'gsi1pk = :department',
         FilterExpression: 'entityType = :documentType',
         ExpressionAttributeValues: {
-          ':department': { S: `DEPT#${departmentId}` },
           ':documentType': { S: 'Document' },
         },
-        ScanIndexForward: false,
         Limit: 50,
         ExclusiveStartKey: exclusiveStartKey,
       }),
@@ -111,14 +119,16 @@ export async function listDocumentsByDepartment(
 
     for (const item of response.Items ?? []) {
       const parsed = parseDocumentSummary(unmarshall(item));
-      if (parsed) {
+      if (parsed && canReadSummary(parsed, principal)) {
         items.push(parsed);
-      } else {
+      } else if (!parsed) {
         console.warn('Skipped malformed document summary record');
       }
     }
     exclusiveStartKey = response.LastEvaluatedKey;
   } while (exclusiveStartKey && items.length < 50);
 
-  return items.slice(0, 50);
+  return items
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+    .slice(0, 50);
 }

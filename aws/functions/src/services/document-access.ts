@@ -1,8 +1,10 @@
 import { GetItemCommand, type DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { unmarshall } from '@aws-sdk/util-dynamodb';
 import {
+  documentAccessScopes,
   documentClassifications,
   documentStatuses,
+  type DocumentAccessScope,
   type DocumentClassification,
   type DocumentDetail,
   type DocumentPrincipal,
@@ -41,11 +43,19 @@ function parseDocument(record: Record<string, unknown>): AuthorizedDocument {
   }
   const classification = requireString(record, 'classification');
   const status = requireString(record, 'status');
+  const accessScope =
+    typeof record.accessScope === 'string' && record.accessScope.length > 0
+      ? record.accessScope
+      : 'DEPARTMENT';
   if (!documentClassifications.includes(classification as DocumentClassification)) {
     throw new Error('Document record có classification không hợp lệ.');
   }
   if (!documentStatuses.includes(status as DocumentStatus)) {
     throw new Error('Document record có status không hợp lệ.');
+  }
+
+  if (!documentAccessScopes.includes(accessScope as DocumentAccessScope)) {
+    throw new Error('Document record có accessScope không hợp lệ.');
   }
 
   const detail: DocumentDetail = {
@@ -57,6 +67,7 @@ function parseDocument(record: Record<string, unknown>): AuthorizedDocument {
     departmentId: requireString(record, 'departmentId'),
     ownerId: requireString(record, 'ownerId'),
     ownerEmail: requireString(record, 'ownerEmail'),
+    accessScope: accessScope as DocumentAccessScope,
     sizeBytes: requireNumber(record, 'sizeBytes'),
     currentVersion: requireNumber(record, 'currentVersion'),
     status: status as DocumentStatus,
@@ -81,6 +92,10 @@ function parseDocument(record: Record<string, unknown>): AuthorizedDocument {
 }
 
 function canAccessDocument(document: DocumentDetail, principal: DocumentPrincipal): boolean {
+  if (document.accessScope === 'ALL_EMPLOYEES') {
+    return true;
+  }
+
   return (
     document.ownerId === principal.userId ||
     document.departmentId === principal.departmentId ||

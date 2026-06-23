@@ -25,7 +25,7 @@ paths:
   /documents:
     get:
       operationId: listDocuments
-      summary: Liệt kê tối đa 50 tài liệu gần nhất trong phòng ban của người dùng
+      summary: Liệt kê tối đa 50 tài liệu gần nhất mà người dùng có quyền truy cập
       responses:
         '200':
           description: Danh sách tài liệu
@@ -96,6 +96,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 components:
   parameters:
     DocumentId:
@@ -140,6 +142,7 @@ components:
           originalFileName,
           contentType,
           classification,
+          accessScope,
           departmentId,
           ownerId,
           ownerEmail,
@@ -163,6 +166,8 @@ components:
         classification:
           type: string
           enum: [PUBLIC, INTERNAL, CONFIDENTIAL, RESTRICTED]
+        accessScope:
+          $ref: '#/components/schemas/DocumentAccessScope'
         ownerId:
           type: string
         ownerEmail:
@@ -226,6 +231,8 @@ components:
         classification:
           type: string
           enum: [PUBLIC, INTERNAL, CONFIDENTIAL, RESTRICTED]
+        accessScope:
+          $ref: '#/components/schemas/DocumentAccessScope'
         originalFileName:
           type: string
           maxLength: 255
@@ -243,6 +250,10 @@ components:
           items:
             type: string
             maxLength: 40
+    DocumentAccessScope:
+      type: string
+      enum: [DEPARTMENT, ALL_EMPLOYEES]
+      description: DEPARTMENT chỉ trong phòng ban hiện tại; ALL_EMPLOYEES cho mọi nhân viên đăng nhập hợp lệ và chỉ System Admin được chọn khi upload.
     UploadIntent:
       type: object
       required: [uploadIntentId, documentId, versionNumber, uploadUrl, expiresAt, uploadHeaders]
@@ -287,6 +298,12 @@ components:
             $ref: '#/components/schemas/Error'
     Unauthorized:
       description: Thiếu hoặc sai thông tin xác thực
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: Người dùng không có quyền thực hiện thao tác
       content:
         application/json:
           schema:

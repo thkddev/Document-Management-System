@@ -47,6 +47,7 @@ const readyDocument = {
   departmentId: 'TECH',
   ownerId: 'user-1',
   ownerEmail: 'user@example.com',
+  accessScope: 'DEPARTMENT',
   sizeBytes: 1453085,
   currentVersion: 1,
   status: 'READY',

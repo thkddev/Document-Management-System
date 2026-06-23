@@ -1,11 +1,13 @@
 import { apiFetch } from './api-client';
 
 export type DocumentClassification = 'PUBLIC' | 'INTERNAL' | 'CONFIDENTIAL' | 'RESTRICTED';
+export type DocumentAccessScope = 'DEPARTMENT' | 'ALL_EMPLOYEES';
 
 export interface CreateUploadIntentRequest {
   title: string;
   departmentId: string;
   classification: DocumentClassification;
+  accessScope?: DocumentAccessScope;
   originalFileName: string;
   contentType: string;
   sizeBytes: number;

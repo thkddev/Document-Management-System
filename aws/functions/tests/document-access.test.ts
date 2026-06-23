@@ -43,12 +43,16 @@ describe('getDocumentDetail', () => {
   ])('cho phép %s xem metadata an toàn', async (_label, principal) => {
     const result = await getDocumentDetail('document-1', principal, deps());
 
-    expect(result).toMatchObject({ documentId: 'document-1', status: 'READY' });
+    expect(result).toMatchObject({
+      documentId: 'document-1',
+      accessScope: 'DEPARTMENT',
+      status: 'READY',
+    });
     expect(result).not.toHaveProperty('cleanObjectKey');
     expect(result).not.toHaveProperty('checksumSha256');
   });
 
-  it('ẩn tài liệu với người khác phòng ban', async () => {
+  it('ẩn tài liệu phòng ban khác', async () => {
     await expect(
       getDocumentDetail(
         'document-1',
@@ -56,6 +60,16 @@ describe('getDocumentDetail', () => {
         deps(),
       ),
     ).resolves.toBeNull();
+  });
+
+  it('cho phép user khác phòng ban xem tài liệu toàn bộ nhân viên', async () => {
+    await expect(
+      getDocumentDetail(
+        'document-1',
+        { userId: 'user-3', departmentId: 'HR', roles: ['EMPLOYEE'] },
+        deps({ ...record, accessScope: 'ALL_EMPLOYEES' }),
+      ),
+    ).resolves.toMatchObject({ documentId: 'document-1', accessScope: 'ALL_EMPLOYEES' });
   });
 
   it('trả null khi tài liệu không tồn tại', async () => {

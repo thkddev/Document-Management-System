@@ -7,7 +7,7 @@ import {
   UploadIntentValidationError,
 } from '../domain/upload-policy.js';
 import { errorResponse, jsonResponse } from '../shared/http.js';
-import { createUploadIntent } from '../services/upload-intents.js';
+import { createUploadIntent, UploadIntentForbiddenError } from '../services/upload-intents.js';
 
 const dynamodb = new DynamoDBClient({});
 const s3 = new S3Client({});
@@ -103,6 +103,14 @@ export const handler: APIGatewayProxyHandler = async (event): Promise<APIGateway
         message: 'Thông tin upload không hợp lệ.',
         requestId,
         details: { issues: err.issues },
+      });
+    }
+
+    if (err instanceof UploadIntentForbiddenError) {
+      return errorResponse(403, {
+        code: 'FORBIDDEN',
+        message: err.message,
+        requestId,
       });
     }
 

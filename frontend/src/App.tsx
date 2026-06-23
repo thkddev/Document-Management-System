@@ -36,6 +36,7 @@ import {
   calculateSha256,
   createUploadIntent,
   uploadFileToSignedUrl,
+  type DocumentAccessScope,
   type DocumentClassification,
 } from './lib/uploads';
 
@@ -51,6 +52,7 @@ interface DocumentItem {
   size: string;
   updated: string;
   classification: Classification;
+  accessScope: DocumentAccessScope;
   status: DocumentStatus;
   statusReason?: string;
 }
@@ -60,6 +62,11 @@ export const classificationLabels: Record<DocumentSummary['classification'], Cla
   INTERNAL: 'Nội bộ',
   CONFIDENTIAL: 'Mật',
   RESTRICTED: 'Hạn chế',
+};
+
+export const accessScopeLabels: Record<DocumentAccessScope, string> = {
+  DEPARTMENT: 'Phòng ban',
+  ALL_EMPLOYEES: 'Toàn công ty',
 };
 
 export const statusLabels: Record<DocumentStatus, string> = {
@@ -109,6 +116,7 @@ function toDocumentItem(document: DocumentSummary): DocumentItem {
     size: formatSize(document.sizeBytes),
     updated: formatUpdatedAt(document.updatedAt),
     classification: classificationLabels[document.classification],
+    accessScope: document.accessScope,
     status: document.status,
   };
   if (document.statusReason) {
@@ -268,6 +276,7 @@ export function App() {
   const [uploadTitle, setUploadTitle] = useState('');
   const [uploadClassification, setUploadClassification] =
     useState<DocumentClassification>('INTERNAL');
+  const [uploadAccessScope, setUploadAccessScope] = useState<DocumentAccessScope>('DEPARTMENT');
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadError, setUploadError] = useState('');
   const [uploadMessage, setUploadMessage] = useState('');
@@ -281,6 +290,7 @@ export function App() {
   // currentUser luôn có giá trị khi App được render (ProtectedRoute đảm bảo điều này)
   const displayName = currentUser?.displayName ?? '';
   const departmentId = currentUser?.departmentId ?? '';
+  const canPublishToAllEmployees = currentUser?.roles.includes('SYSTEM_ADMIN') ?? false;
   const initials = toInitials(displayName);
   const documents = useMemo(() => documentSummaries.map(toDocumentItem), [documentSummaries]);
   const processingCount = documentSummaries.filter((document) =>
@@ -309,6 +319,12 @@ export function App() {
     const timer = window.setInterval(() => void refreshDocuments(), 5000);
     return () => window.clearInterval(timer);
   }, [documentSummaries, refreshDocuments]);
+
+  useEffect(() => {
+    if (!canPublishToAllEmployees && uploadAccessScope !== 'DEPARTMENT') {
+      setUploadAccessScope('DEPARTMENT');
+    }
+  }, [canPublishToAllEmployees, uploadAccessScope]);
 
   const filteredDocuments = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase('vi');
@@ -339,6 +355,7 @@ export function App() {
         title,
         departmentId,
         classification: uploadClassification,
+        accessScope: canPublishToAllEmployees ? uploadAccessScope : 'DEPARTMENT',
         originalFileName: uploadFile.name,
         contentType: inferContentType(uploadFile),
         sizeBytes: uploadFile.size,
@@ -349,6 +366,7 @@ export function App() {
       await refreshDocuments();
       setUploadMessage('File đã được gửi vào vùng kiểm tra. Trạng thái sẽ tự động cập nhật.');
       setUploadTitle('');
+      setUploadAccessScope('DEPARTMENT');
       setUploadFile(null);
     } catch (err) {
       setUploadError(
@@ -483,6 +501,21 @@ export function App() {
                   </select>
                 </label>
                 <label>
+                  <span>Phạm vi truy cập</span>
+                  <select
+                    value={uploadAccessScope}
+                    onChange={(event) =>
+                      setUploadAccessScope(event.target.value as DocumentAccessScope)
+                    }
+                    disabled={isUploading || !canPublishToAllEmployees}
+                  >
+                    <option value="DEPARTMENT">Phòng ban hiện tại</option>
+                    {canPublishToAllEmployees && (
+                      <option value="ALL_EMPLOYEES">Toàn bộ nhân viên</option>
+                    )}
+                  </select>
+                </label>
+                <label>
                   <span>File</span>
                   <input
                     type="file"
@@ -598,6 +631,9 @@ export function App() {
                             className={`classification classification--${document.classification.replaceAll(' ', '-')}`}
                           >
                             {document.classification}
+                          </span>
+                          <span className="access-scope-label">
+                            {accessScopeLabels[document.accessScope]}
                           </span>
                         </p>
                         {document.statusReason && (

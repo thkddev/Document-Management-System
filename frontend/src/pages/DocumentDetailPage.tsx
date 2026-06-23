@@ -14,6 +14,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import {
   FileTypeMark,
   NavContent,
+  accessScopeLabels,
   classificationLabels,
   fileType,
   formatSize,
@@ -236,6 +237,10 @@ export function DocumentDetailPage() {
                     <div>
                       <dt>Phân loại</dt>
                       <dd>{classificationLabels[document.classification]}</dd>
+                    </div>
+                    <div>
+                      <dt>Phạm vi truy cập</dt>
+                      <dd>{accessScopeLabels[document.accessScope]}</dd>
                     </div>
                     <div>
                       <dt>Phiên bản hiện tại</dt>

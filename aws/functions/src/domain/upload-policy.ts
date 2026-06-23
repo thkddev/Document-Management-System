@@ -1,6 +1,8 @@
 import {
+  documentAccessScopes,
   documentClassifications,
   type CreateUploadIntentRequest,
+  type DocumentAccessScope,
   type DocumentClassification,
 } from './models.js';
 
@@ -35,6 +37,10 @@ function isClassification(value: unknown): value is DocumentClassification {
     typeof value === 'string' &&
     documentClassifications.includes(value as DocumentClassification)
   );
+}
+
+function isAccessScope(value: unknown): value is DocumentAccessScope {
+  return typeof value === 'string' && documentAccessScopes.includes(value as DocumentAccessScope);
 }
 
 function normalizeTags(value: unknown, issues: ValidationIssue[]): string[] | undefined {
@@ -84,6 +90,11 @@ export function parseCreateUploadIntentRequest(raw: unknown): CreateUploadIntent
     issues.push({ field: 'classification', message: 'Classification không hợp lệ.' });
   }
 
+  const accessScope = raw.accessScope === undefined ? 'DEPARTMENT' : raw.accessScope;
+  if (!isAccessScope(accessScope)) {
+    issues.push({ field: 'accessScope', message: 'Phạm vi truy cập không hợp lệ.' });
+  }
+
   const originalFileName =
     typeof raw.originalFileName === 'string' ? raw.originalFileName.trim() : '';
   if (originalFileName.length < 1 || originalFileName.length > 255) {
@@ -110,7 +121,7 @@ export function parseCreateUploadIntentRequest(raw: unknown): CreateUploadIntent
 
   const tags = normalizeTags(raw.tags, issues);
 
-  if (issues.length > 0 || !isClassification(raw.classification)) {
+  if (issues.length > 0 || !isClassification(raw.classification) || !isAccessScope(accessScope)) {
     throw new UploadIntentValidationError(issues);
   }
 
@@ -118,6 +129,7 @@ export function parseCreateUploadIntentRequest(raw: unknown): CreateUploadIntent
     title,
     departmentId,
     classification: raw.classification,
+    accessScope,
     originalFileName,
     contentType,
     sizeBytes,
