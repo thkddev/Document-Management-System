@@ -58,8 +58,22 @@ export interface DepartmentShareRequestSummary {
   createdAt: string;
 }
 
+export interface DepartmentShareSummary {
+  documentId: string;
+  sourceDepartmentId: string;
+  targetDepartmentId: string;
+  requestedBy: string;
+  approvedBy: string;
+  requestedAt: string;
+  approvedAt: string;
+}
+
 interface ListShareRequestsResponse {
   items: DepartmentShareRequestSummary[];
+}
+
+interface ListDepartmentSharesResponse {
+  items: DepartmentShareSummary[];
 }
 
 interface ListDocumentsResponse {
@@ -108,6 +122,23 @@ export function createDepartmentShare(
 export async function listPendingShareRequests(): Promise<DepartmentShareRequestSummary[]> {
   const response = await apiFetch<ListShareRequestsResponse>('/share-requests');
   return response.items;
+}
+
+export async function listDepartmentShares(documentId: string): Promise<DepartmentShareSummary[]> {
+  const response = await apiFetch<ListDepartmentSharesResponse>(
+    `/documents/${encodeURIComponent(documentId)}/department-shares`,
+  );
+  return response.items;
+}
+
+export function revokeDepartmentShare(
+  documentId: string,
+  targetDepartmentId: string,
+): Promise<{ documentId: string; targetDepartmentId: string; status: 'REVOKED' }> {
+  return apiFetch<{ documentId: string; targetDepartmentId: string; status: 'REVOKED' }>(
+    `/documents/${encodeURIComponent(documentId)}/department-shares/${encodeURIComponent(targetDepartmentId)}`,
+    { method: 'DELETE' },
+  );
 }
 
 export function approveShareRequest(

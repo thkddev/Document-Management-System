@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
   GetItemCommand,
+  DeleteItemCommand,
   PutItemCommand,
   QueryCommand,
   ScanCommand,
@@ -28,6 +29,13 @@ export class DocumentShareNotFoundError extends Error {
   constructor(message = 'Không tìm thấy tài liệu hoặc yêu cầu chia sẻ.') {
     super(message);
     this.name = 'DocumentShareNotFoundError';
+  }
+}
+
+export class DepartmentShareNotFoundError extends Error {
+  constructor(message = 'Không tìm thấy quyền chia sẻ phòng ban.') {
+    super(message);
+    this.name = 'DepartmentShareNotFoundError';
   }
 }
 
@@ -83,6 +91,22 @@ export interface DepartmentShareRequestSummary {
 export interface DepartmentShareDecisionResult {
   shareRequestId: string;
   status: 'APPROVED' | 'REJECTED';
+}
+
+export interface DepartmentShareSummary {
+  documentId: string;
+  sourceDepartmentId: string;
+  targetDepartmentId: string;
+  requestedBy: string;
+  approvedBy: string;
+  requestedAt: string;
+  approvedAt: string;
+}
+
+export interface RevokeDepartmentShareResult {
+  documentId: string;
+  targetDepartmentId: string;
+  status: 'REVOKED';
 }
 
 const directShareClassifications = new Set<DocumentClassification>(['PUBLIC', 'INTERNAL']);
@@ -156,6 +180,33 @@ function canReviewShare(document: DocumentRecord, principal: DocumentPrincipal):
     (principal.roles.includes('DEPARTMENT_ADMIN') &&
       principal.departmentId === document.departmentId)
   );
+}
+
+function canManageDepartmentShares(
+  document: DocumentRecord,
+  principal: DocumentPrincipal,
+): boolean {
+  return (
+    document.ownerId === principal.userId ||
+    principal.roles.includes('SYSTEM_ADMIN') ||
+    (principal.roles.includes('DEPARTMENT_ADMIN') &&
+      principal.departmentId === document.departmentId)
+  );
+}
+
+function parseDepartmentShare(record: Record<string, unknown>): DepartmentShareSummary | null {
+  if (record.entityType !== 'DocumentDepartmentShare' || record.status !== 'APPROVED') {
+    return null;
+  }
+  return {
+    documentId: requireString(record, 'documentId'),
+    sourceDepartmentId: requireString(record, 'sourceDepartmentId'),
+    targetDepartmentId: requireString(record, 'targetDepartmentId'),
+    requestedBy: requireString(record, 'requestedBy'),
+    approvedBy: requireString(record, 'approvedBy'),
+    requestedAt: requireString(record, 'requestedAt'),
+    approvedAt: requireString(record, 'approvedAt'),
+  };
 }
 
 async function hasApprovedShare(
@@ -378,6 +429,97 @@ export async function createDepartmentShare(
     targetDepartmentId,
     shareRequestId,
   };
+}
+
+export async function listApprovedDepartmentShares(
+  documentId: string,
+  principal: DocumentPrincipal,
+  deps: DocumentShareDeps,
+): Promise<DepartmentShareSummary[]> {
+  const document = await loadDocument(documentId, deps);
+  if (!document || !canManageDepartmentShares(document, principal)) {
+    throw new DocumentShareNotFoundError('Không tìm thấy tài liệu.');
+  }
+
+  const response = await deps.dynamodb.send(
+    new QueryCommand({
+      TableName: deps.tableName,
+      KeyConditionExpression: 'pk = :pk AND begins_with(sk, :skPrefix)',
+      ExpressionAttributeValues: {
+        ':pk': { S: `DOC#${document.documentId}` },
+        ':skPrefix': { S: 'SHARE#DEPT#' },
+      },
+      Limit: 50,
+    }),
+  );
+
+  const items: DepartmentShareSummary[] = [];
+  for (const item of response.Items ?? []) {
+    const parsed = parseDepartmentShare(unmarshall(item));
+    if (parsed) items.push(parsed);
+  }
+  return items.sort((left, right) => right.approvedAt.localeCompare(left.approvedAt));
+}
+
+export async function revokeDepartmentShare(
+  documentId: string,
+  targetDepartmentIdInput: unknown,
+  principal: DocumentPrincipal,
+  deps: DocumentShareDeps,
+): Promise<RevokeDepartmentShareResult> {
+  const targetDepartmentId = validateDepartmentId(targetDepartmentIdInput);
+  const document = await loadDocument(documentId, deps);
+  if (!document || !canManageDepartmentShares(document, principal)) {
+    throw new DocumentShareNotFoundError('Không tìm thấy tài liệu.');
+  }
+  if (targetDepartmentId === document.departmentId) {
+    throw new DocumentShareValidationError('Không thể thu hồi phòng ban sở hữu tài liệu.');
+  }
+
+  try {
+    await deps.dynamodb.send(
+      new DeleteItemCommand({
+        TableName: deps.tableName,
+        Key: {
+          pk: { S: `DOC#${document.documentId}` },
+          sk: { S: `SHARE#DEPT#${targetDepartmentId}` },
+        },
+        ConditionExpression: 'entityType = :type AND #status = :approved',
+        ExpressionAttributeNames: { '#status': 'status' },
+        ExpressionAttributeValues: {
+          ':type': { S: 'DocumentDepartmentShare' },
+          ':approved': { S: 'APPROVED' },
+        },
+      }),
+    );
+  } catch (err) {
+    if (err instanceof Error && err.name === 'ConditionalCheckFailedException') {
+      throw new DepartmentShareNotFoundError();
+    }
+    throw err;
+  }
+
+  const now = (deps.now?.() ?? new Date()).toISOString();
+  await writeAuditEvent(
+    {
+      documentId: document.documentId,
+      versionNumber: document.currentVersion,
+      action: 'DOCUMENT_SHARE_REVOKED',
+      actorType: 'USER',
+      actorId: principal.userId,
+      source: 'API',
+      outcome: 'SUCCESS',
+      occurredAt: now,
+      requestId: deps.requestId,
+      details: {
+        sourceDepartmentId: document.departmentId,
+        targetDepartmentId,
+        classification: document.classification,
+      },
+    },
+    deps,
+  );
+  return { documentId: document.documentId, targetDepartmentId, status: 'REVOKED' };
 }
 
 function parseShareRequestSummary(

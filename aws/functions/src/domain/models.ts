@@ -113,6 +113,7 @@ export const auditActions = [
   'DOCUMENT_SHARE_GRANTED',
   'DOCUMENT_SHARE_APPROVED',
   'DOCUMENT_SHARE_REJECTED',
+  'DOCUMENT_SHARE_REVOKED',
 ] as const;
 
 export type AuditAction = (typeof auditActions)[number];

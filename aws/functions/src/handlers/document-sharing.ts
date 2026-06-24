@@ -3,11 +3,14 @@ import type { APIGatewayProxyHandler, APIGatewayProxyResult } from 'aws-lambda';
 import {
   approveShareRequest,
   createDepartmentShare,
+  DepartmentShareNotFoundError,
   DocumentShareConflictError,
   DocumentShareNotFoundError,
   DocumentShareValidationError,
+  listApprovedDepartmentShares,
   listPendingShareRequests,
   rejectShareRequest,
+  revokeDepartmentShare,
 } from '../services/document-sharing.js';
 import { documentPrincipalFromClaims } from '../shared/auth.js';
 import { errorResponse, jsonResponse } from '../shared/http.js';
@@ -52,18 +55,23 @@ export const handler: APIGatewayProxyHandler = async (event): Promise<APIGateway
 
   try {
     if (event.resource === '/documents/{documentId}/department-shares') {
-      if (event.httpMethod !== 'POST') {
-        return errorResponse(405, {
-          code: 'METHOD_NOT_ALLOWED',
-          message: 'Phương thức không được hỗ trợ.',
-          requestId,
-        });
-      }
       const documentId = event.pathParameters?.documentId;
       if (!documentId) {
         return errorResponse(404, {
           code: 'DOCUMENT_NOT_FOUND',
           message: 'Không tìm thấy tài liệu.',
+          requestId,
+        });
+      }
+      if (event.httpMethod === 'GET') {
+        return jsonResponse(200, {
+          items: await listApprovedDepartmentShares(documentId, principal, deps),
+        });
+      }
+      if (event.httpMethod !== 'POST') {
+        return errorResponse(405, {
+          code: 'METHOD_NOT_ALLOWED',
+          message: 'Phương thức không được hỗ trợ.',
           requestId,
         });
       }
@@ -75,6 +83,41 @@ export const handler: APIGatewayProxyHandler = async (event): Promise<APIGateway
         deps,
       );
       return jsonResponse(result.mode === 'GRANTED' ? 201 : 202, result);
+    }
+
+    if (event.resource === '/documents/{documentId}/department-shares/{targetDepartmentId}') {
+      if (event.httpMethod !== 'DELETE') {
+        return errorResponse(405, {
+          code: 'METHOD_NOT_ALLOWED',
+          message: 'Phương thức không được hỗ trợ.',
+          requestId,
+        });
+      }
+      const documentId = event.pathParameters?.documentId;
+      const targetDepartmentId = event.pathParameters?.targetDepartmentId;
+      if (!documentId) {
+        return errorResponse(404, {
+          code: 'DOCUMENT_NOT_FOUND',
+          message: 'Không tìm thấy tài liệu.',
+          requestId,
+        });
+      }
+      if (!targetDepartmentId) {
+        return errorResponse(404, {
+          code: 'DEPARTMENT_SHARE_NOT_FOUND',
+          message: 'Không tìm thấy quyền chia sẻ phòng ban.',
+          requestId,
+        });
+      }
+      return jsonResponse(
+        200,
+        await revokeDepartmentShare(
+          documentId,
+          decodeURIComponent(targetDepartmentId),
+          principal,
+          deps,
+        ),
+      );
     }
 
     if (event.resource === '/share-requests') {
@@ -146,6 +189,13 @@ export const handler: APIGatewayProxyHandler = async (event): Promise<APIGateway
     if (err instanceof DocumentShareValidationError) {
       return errorResponse(400, {
         code: 'VALIDATION_ERROR',
+        message: err.message,
+        requestId,
+      });
+    }
+    if (err instanceof DepartmentShareNotFoundError) {
+      return errorResponse(404, {
+        code: 'DEPARTMENT_SHARE_NOT_FOUND',
         message: err.message,
         requestId,
       });

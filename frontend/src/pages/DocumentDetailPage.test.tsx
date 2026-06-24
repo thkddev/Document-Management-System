@@ -1,23 +1,26 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DocumentDetailPage } from './DocumentDetailPage';
 
 const mocks = vi.hoisted(() => ({
   getDocumentDetail: vi.fn(),
+  listDepartmentShares: vi.fn(),
+  revokeDepartmentShare: vi.fn(),
   createDownloadIntent: vi.fn(),
   triggerBrowserDownload: vi.fn(),
+  currentUser: {
+    userId: 'user-1',
+    email: 'user@example.com',
+    displayName: 'Duy Admin',
+    departmentId: 'TECH',
+    roles: ['SYSTEM_ADMIN'],
+  },
 }));
 
 vi.mock('../features/auth/AuthContext', () => ({
   useAuth: () => ({
-    currentUser: {
-      userId: 'user-1',
-      email: 'user@example.com',
-      displayName: 'Duy Admin',
-      departmentId: 'TECH',
-      roles: ['SYSTEM_ADMIN'],
-    },
+    currentUser: mocks.currentUser,
     logout: vi.fn(),
   }),
 }));
@@ -25,6 +28,8 @@ vi.mock('../features/auth/AuthContext', () => ({
 vi.mock('../lib/documents', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getDocumentDetail: mocks.getDocumentDetail,
+  listDepartmentShares: mocks.listDepartmentShares,
+  revokeDepartmentShare: mocks.revokeDepartmentShare,
   createDownloadIntent: mocks.createDownloadIntent,
   triggerBrowserDownload: mocks.triggerBrowserDownload,
 }));
@@ -58,10 +63,25 @@ function renderPage() {
 
 describe('DocumentDetailPage', () => {
   beforeEach(() => {
+    mocks.currentUser = {
+      userId: 'user-1',
+      email: 'user@example.com',
+      displayName: 'Duy Admin',
+      departmentId: 'TECH',
+      roles: ['SYSTEM_ADMIN'],
+    };
     mocks.getDocumentDetail.mockReset();
+    mocks.listDepartmentShares.mockReset();
+    mocks.revokeDepartmentShare.mockReset();
     mocks.createDownloadIntent.mockReset();
     mocks.triggerBrowserDownload.mockReset();
     mocks.getDocumentDetail.mockResolvedValue(detail);
+    mocks.listDepartmentShares.mockResolvedValue([]);
+    mocks.revokeDepartmentShare.mockResolvedValue({
+      documentId: 'document-1',
+      targetDepartmentId: 'HR',
+      status: 'REVOKED',
+    });
     mocks.createDownloadIntent.mockResolvedValue({
       downloadUrl: 'https://signed.example/download',
       expiresAt: '2026-06-20T06:35:00.000Z',
@@ -75,6 +95,7 @@ describe('DocumentDetailPage', () => {
     expect(await screen.findByRole('heading', { name: detail.title })).toBeInTheDocument();
     expect(screen.getByText('user@example.com')).toBeInTheDocument();
     expect(screen.getAllByText('Sẵn sàng').length).toBeGreaterThan(0);
+    expect(await screen.findByText('Tài liệu chưa được chia sẻ cho phòng ban khác.')).toBeInTheDocument();
   });
 
   it('tạo và kích hoạt download intent', async () => {
@@ -103,5 +124,70 @@ describe('DocumentDetailPage', () => {
     expect(
       await screen.findByRole('heading', { name: 'Không thể mở tài liệu' }),
     ).toBeInTheDocument();
+  });
+
+  it('hiển thị danh sách quyền đã chia sẻ', async () => {
+    mocks.listDepartmentShares.mockResolvedValue([
+      {
+        documentId: 'document-1',
+        sourceDepartmentId: 'TECH',
+        targetDepartmentId: 'HR',
+        requestedBy: 'user-1',
+        approvedBy: 'admin-1',
+        requestedAt: '2026-06-20T06:10:00.000Z',
+        approvedAt: '2026-06-20T06:20:00.000Z',
+      },
+    ]);
+
+    renderPage();
+
+    const sharedAccessSection = await screen.findByRole('region', { name: 'Quyền đã chia sẻ' });
+    expect(await within(sharedAccessSection).findByText('Nhân sự')).toBeInTheDocument();
+    expect(within(sharedAccessSection).getByText('HR')).toBeInTheDocument();
+    expect(within(sharedAccessSection).getByRole('button', { name: /Thu hồi/ })).toBeInTheDocument();
+  });
+
+  it('thu hồi quyền chia sẻ bằng xác nhận trong UI', async () => {
+    mocks.listDepartmentShares
+      .mockResolvedValueOnce([
+        {
+          documentId: 'document-1',
+          sourceDepartmentId: 'TECH',
+          targetDepartmentId: 'HR',
+          requestedBy: 'user-1',
+          approvedBy: 'admin-1',
+          requestedAt: '2026-06-20T06:10:00.000Z',
+          approvedAt: '2026-06-20T06:20:00.000Z',
+        },
+      ])
+      .mockResolvedValueOnce([]);
+
+    renderPage();
+    const sharedAccessSection = await screen.findByRole('region', { name: 'Quyền đã chia sẻ' });
+    await within(sharedAccessSection).findByText('Nhân sự');
+
+    fireEvent.click(within(sharedAccessSection).getByRole('button', { name: /Thu hồi/ }));
+    expect(screen.getByText('Thu hồi quyền của Nhân sự?')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Xác nhận thu hồi' }));
+
+    await vi.waitFor(() =>
+      expect(mocks.revokeDepartmentShare).toHaveBeenCalledWith('document-1', 'HR'),
+    );
+    expect(await screen.findByText('Đã thu hồi quyền chia sẻ.')).toBeInTheDocument();
+  });
+
+  it('không hiển thị quản lý quyền đã chia sẻ cho Department Admin phòng nhận', async () => {
+    mocks.currentUser = {
+      ...mocks.currentUser,
+      userId: 'hr-admin',
+      departmentId: 'HR',
+      roles: ['DEPARTMENT_ADMIN'],
+    };
+
+    renderPage();
+    await screen.findByRole('heading', { name: detail.title });
+
+    expect(screen.queryByRole('heading', { name: 'Quyền đã chia sẻ' })).not.toBeInTheDocument();
+    expect(mocks.listDepartmentShares).not.toHaveBeenCalled();
   });
 });

@@ -138,6 +138,10 @@ describe('DmsStack', () => {
       HttpMethod: 'POST',
       AuthorizationType: 'COGNITO_USER_POOLS',
     });
+    template.hasResourceProperties('AWS::ApiGateway::Method', {
+      HttpMethod: 'DELETE',
+      AuthorizationType: 'COGNITO_USER_POOLS',
+    });
   });
 
   it('cấu hình route chia sẻ tài liệu liên phòng ban bằng Cognito', () => {

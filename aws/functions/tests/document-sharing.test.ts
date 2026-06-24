@@ -1,4 +1,5 @@
 import {
+  DeleteItemCommand,
   GetItemCommand,
   PutItemCommand,
   QueryCommand,
@@ -13,7 +14,9 @@ import {
   createDepartmentShare,
   DocumentShareConflictError,
   listPendingShareRequests,
+  listApprovedDepartmentShares,
   rejectShareRequest,
+  revokeDepartmentShare,
 } from '../src/services/document-sharing.js';
 
 const documentRecord = {
@@ -263,6 +266,116 @@ describe('document sharing', () => {
     );
 
     expect(items).toEqual([expect.objectContaining({ shareRequestId: 'request-1' })]);
+  });
+
+  it('owner liệt kê được quyền phòng ban đã chia sẻ', async () => {
+    const send = vi.fn(async (command) => {
+      if (command instanceof GetItemCommand && command.input.Key?.sk?.S === 'META') {
+        return { Item: marshall(documentRecord) };
+      }
+      if (command instanceof QueryCommand) {
+        return {
+          Items: [
+            marshall({
+              entityType: 'DocumentDepartmentShare',
+              documentId: 'document-1',
+              sourceDepartmentId: 'TECH',
+              targetDepartmentId: 'HR',
+              status: 'APPROVED',
+              requestedBy: 'owner-1',
+              approvedBy: 'admin-1',
+              requestedAt: '2026-06-24T01:00:00.000Z',
+              approvedAt: '2026-06-24T02:00:00.000Z',
+            }),
+          ],
+        };
+      }
+      throw new Error(`Unexpected command ${command.constructor.name}`);
+    });
+
+    const items = await listApprovedDepartmentShares('document-1', principal, {
+      ...depsBase,
+      dynamodb: { send } as unknown as Pick<DynamoDBClient, 'send'>,
+    });
+
+    expect(items).toEqual([
+      expect.objectContaining({
+        documentId: 'document-1',
+        targetDepartmentId: 'HR',
+        approvedBy: 'admin-1',
+      }),
+    ]);
+  });
+
+  it('Department Admin phòng nhận không liệt kê được quyền đã chia sẻ', async () => {
+    const send = vi.fn(async (command) => {
+      if (command instanceof GetItemCommand && command.input.Key?.sk?.S === 'META') {
+        return { Item: marshall(documentRecord) };
+      }
+      throw new Error(`Unexpected command ${command.constructor.name}`);
+    });
+
+    await expect(
+      listApprovedDepartmentShares(
+        'document-1',
+        { userId: 'hr-admin', departmentId: 'HR', roles: ['DEPARTMENT_ADMIN'] },
+        {
+          ...depsBase,
+          dynamodb: { send } as unknown as Pick<DynamoDBClient, 'send'>,
+        },
+      ),
+    ).rejects.toThrow('Không tìm thấy');
+  });
+
+  it('owner thu hồi được quyền chia sẻ và ghi audit', async () => {
+    const send = vi.fn(async (command) => {
+      if (command instanceof GetItemCommand && command.input.Key?.sk?.S === 'META') {
+        return { Item: marshall(documentRecord) };
+      }
+      if (command instanceof DeleteItemCommand || command instanceof PutItemCommand) return {};
+      throw new Error(`Unexpected command ${command.constructor.name}`);
+    });
+
+    const result = await revokeDepartmentShare('document-1', 'HR', principal, {
+      ...depsBase,
+      dynamodb: { send } as unknown as Pick<DynamoDBClient, 'send'>,
+    });
+
+    expect(result).toEqual({
+      documentId: 'document-1',
+      targetDepartmentId: 'HR',
+      status: 'REVOKED',
+    });
+    expect(send.mock.calls.some(([command]) => command instanceof DeleteItemCommand)).toBe(true);
+    const auditPut = send.mock.calls
+      .map(([command]) => command)
+      .find(
+        (command) =>
+          command instanceof PutItemCommand &&
+          command.input.Item?.action?.S === 'DOCUMENT_SHARE_REVOKED',
+      );
+    expect(auditPut).toBeInstanceOf(PutItemCommand);
+  });
+
+  it('Department Admin phòng nhận không thu hồi được quyền chia sẻ', async () => {
+    const send = vi.fn(async (command) => {
+      if (command instanceof GetItemCommand && command.input.Key?.sk?.S === 'META') {
+        return { Item: marshall(documentRecord) };
+      }
+      throw new Error(`Unexpected command ${command.constructor.name}`);
+    });
+
+    await expect(
+      revokeDepartmentShare(
+        'document-1',
+        'HR',
+        { userId: 'hr-admin', departmentId: 'HR', roles: ['DEPARTMENT_ADMIN'] },
+        {
+          ...depsBase,
+          dynamodb: { send } as unknown as Pick<DynamoDBClient, 'send'>,
+        },
+      ),
+    ).rejects.toThrow('Không tìm thấy');
   });
 
   it('bắt buộc nhập lý do khi từ chối', async () => {

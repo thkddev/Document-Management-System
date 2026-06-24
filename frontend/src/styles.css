@@ -1507,6 +1507,71 @@ select:focus-visible {
   font-weight: 700;
 }
 
+.shared-access-list {
+  display: grid;
+  gap: 10px;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.shared-access-list li {
+  display: grid;
+  grid-template-columns: minmax(170px, 1fr) minmax(180px, 1.2fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.shared-access-list strong,
+.shared-access-list span,
+.shared-access-list small {
+  display: block;
+}
+
+.shared-access-list strong {
+  font-size: 13px;
+}
+
+.shared-access-list span {
+  margin-top: 4px;
+  color: var(--ledger-blue);
+  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.shared-access-list small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.share-revoke-confirm {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  margin-top: 16px;
+  padding: 14px;
+  background: rgba(156, 73, 60, 0.06);
+  border: 1px solid rgba(156, 73, 60, 0.25);
+}
+
+.share-revoke-confirm strong {
+  display: block;
+  margin-top: 5px;
+  font-size: 13px;
+}
+
+.share-revoke-confirm p:not(.section-kicker) {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
 .detail-state {
   display: grid;
   min-height: 440px;
@@ -1713,6 +1778,11 @@ select:focus-visible {
 
   .activity-panel .panel-heading {
     grid-column: 1;
+  }
+
+  .shared-access-list li,
+  .share-revoke-confirm {
+    grid-template-columns: 1fr;
   }
 }
 

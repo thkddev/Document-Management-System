@@ -554,9 +554,26 @@ export class DmsStack extends cdk.Stack {
         authorizer,
         authorizationType: apigateway.AuthorizationType.COGNITO,
       });
-    documentResource
-      .addResource('department-shares')
-      .addMethod('POST', new apigateway.LambdaIntegration(documentSharingFunction), {
+    const departmentSharesResource = documentResource.addResource('department-shares');
+    departmentSharesResource.addMethod(
+      'GET',
+      new apigateway.LambdaIntegration(documentSharingFunction),
+      {
+        authorizer,
+        authorizationType: apigateway.AuthorizationType.COGNITO,
+      },
+    );
+    departmentSharesResource.addMethod(
+      'POST',
+      new apigateway.LambdaIntegration(documentSharingFunction),
+      {
+        authorizer,
+        authorizationType: apigateway.AuthorizationType.COGNITO,
+      },
+    );
+    departmentSharesResource
+      .addResource('{targetDepartmentId}')
+      .addMethod('DELETE', new apigateway.LambdaIntegration(documentSharingFunction), {
         authorizer,
         authorizationType: apigateway.AuthorizationType.COGNITO,
       });

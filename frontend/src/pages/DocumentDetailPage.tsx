@@ -9,6 +9,7 @@ import {
   Send,
   Menu,
   ShieldCheck,
+  Trash2,
   X,
 } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -30,7 +31,10 @@ import {
   createDepartmentShare,
   createDownloadIntent,
   getDocumentDetail,
+  listDepartmentShares,
+  revokeDepartmentShare,
   triggerBrowserDownload,
+  type DepartmentShareSummary,
   type DocumentDetail,
 } from '../lib/documents';
 
@@ -48,6 +52,12 @@ export function DocumentDetailPage() {
   const [sharing, setSharing] = useState(false);
   const [shareMessage, setShareMessage] = useState('');
   const [shareError, setShareError] = useState('');
+  const [departmentShares, setDepartmentShares] = useState<DepartmentShareSummary[]>([]);
+  const [sharesLoading, setSharesLoading] = useState(false);
+  const [sharesError, setSharesError] = useState('');
+  const [sharesMessage, setSharesMessage] = useState('');
+  const [revokeTargetDepartmentId, setRevokeTargetDepartmentId] = useState('');
+  const [revokingDepartmentId, setRevokingDepartmentId] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -99,11 +109,50 @@ export function DocumentDetailPage() {
     (document.ownerId === currentUser.userId ||
       document.departmentId === currentUser.departmentId ||
       currentUser.roles.includes('SYSTEM_ADMIN'));
+  const canManageDepartmentShares =
+    !!document &&
+    !!currentUser &&
+    (document.ownerId === currentUser.userId ||
+      currentUser.roles.includes('SYSTEM_ADMIN') ||
+      (currentUser.roles.includes('DEPARTMENT_ADMIN') &&
+        currentUser.departmentId === document.departmentId));
   const shareDepartmentOptions = departmentOptions.filter(
     (item) => item.id !== document?.departmentId,
   );
   const requiresShareApproval =
     document?.classification === 'CONFIDENTIAL' || document?.classification === 'RESTRICTED';
+
+  function departmentLabel(departmentIdValue: string): string {
+    return (
+      departmentOptions.find((department) => department.id === departmentIdValue)?.label ??
+      departmentIdValue
+    );
+  }
+
+  async function refreshDepartmentShares(documentIdValue: string): Promise<void> {
+    setSharesLoading(true);
+    try {
+      setDepartmentShares(await listDepartmentShares(documentIdValue));
+      setSharesError('');
+    } catch (err) {
+      setDepartmentShares([]);
+      setSharesError(
+        err instanceof Error
+          ? err.message
+          : 'Không thể tải danh sách quyền đã chia sẻ. Vui lòng thử lại.',
+      );
+    } finally {
+      setSharesLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!document || !canManageDepartmentShares) {
+      setDepartmentShares([]);
+      return;
+    }
+    void refreshDepartmentShares(document.documentId);
+  }, [canManageDepartmentShares, document]);
 
   async function handleDepartmentShare(): Promise<void> {
     if (!document || !targetDepartmentId) return;
@@ -117,10 +166,44 @@ export function DocumentDetailPage() {
           ? 'Đã chia sẻ tài liệu cho phòng ban đã chọn.'
           : 'Đã gửi yêu cầu duyệt chia sẻ.',
       );
+      if (result.mode === 'GRANTED' && canManageDepartmentShares) {
+        await refreshDepartmentShares(document.documentId);
+      }
     } catch (err) {
       setShareError(err instanceof Error ? err.message : 'Không thể chia sẻ tài liệu.');
     } finally {
       setSharing(false);
+    }
+  }
+
+  function openRevokeConfirmation(targetDepartmentIdValue: string): void {
+    setRevokeTargetDepartmentId(targetDepartmentIdValue);
+    setSharesError('');
+    setSharesMessage('');
+  }
+
+  function closeRevokeConfirmation(): void {
+    setRevokeTargetDepartmentId('');
+  }
+
+  async function handleRevokeDepartmentShare(): Promise<void> {
+    if (!document || !revokeTargetDepartmentId) return;
+    setRevokingDepartmentId(revokeTargetDepartmentId);
+    setSharesError('');
+    setSharesMessage('');
+    try {
+      await revokeDepartmentShare(document.documentId, revokeTargetDepartmentId);
+      await refreshDepartmentShares(document.documentId);
+      setSharesMessage('Đã thu hồi quyền chia sẻ.');
+      closeRevokeConfirmation();
+    } catch (err) {
+      setSharesError(
+        err instanceof Error
+          ? err.message
+          : 'Không thể thu hồi quyền chia sẻ. Vui lòng thử lại.',
+      );
+    } finally {
+      setRevokingDepartmentId(null);
     }
   }
 
@@ -360,6 +443,96 @@ export function DocumentDetailPage() {
                     <p className="upload-status upload-status--success">{shareMessage}</p>
                   )}
                   {shareError && <p className="upload-status upload-status--error">{shareError}</p>}
+                </section>
+              )}
+
+              {canManageDepartmentShares && (
+                <section
+                  className="detail-section share-section"
+                  aria-labelledby="shared-access-heading"
+                >
+                  <div className="detail-section-heading">
+                    <p className="section-kicker">Quản lý quyền</p>
+                    <h2 id="shared-access-heading">Quyền đã chia sẻ</h2>
+                  </div>
+
+                  {sharesLoading && (
+                    <p className="share-hint" aria-live="polite">
+                      Đang tải danh sách quyền đã chia sẻ.
+                    </p>
+                  )}
+                  {sharesError && (
+                    <p className="document-load-error detail-download-error" role="alert">
+                      {sharesError}
+                    </p>
+                  )}
+                  {sharesMessage && (
+                    <p className="upload-status upload-status--success">{sharesMessage}</p>
+                  )}
+
+                  {!sharesLoading && !sharesError && departmentShares.length === 0 && (
+                    <p className="share-hint">
+                      Tài liệu chưa được chia sẻ cho phòng ban khác.
+                    </p>
+                  )}
+
+                  {departmentShares.length > 0 && (
+                    <ul className="shared-access-list">
+                      {departmentShares.map((share) => (
+                        <li key={share.targetDepartmentId}>
+                          <div>
+                            <strong>{departmentLabel(share.targetDepartmentId)}</strong>
+                            <span>{share.targetDepartmentId}</span>
+                          </div>
+                          <small>
+                            Cấp quyền lúc {formatUpdatedAt(share.approvedAt)} bởi{' '}
+                            {share.approvedBy}
+                          </small>
+                          <button
+                            className="quiet-button quiet-button--danger"
+                            type="button"
+                            disabled={revokingDepartmentId === share.targetDepartmentId}
+                            onClick={() => openRevokeConfirmation(share.targetDepartmentId)}
+                          >
+                            <Trash2 size={15} />
+                            Thu hồi
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+
+                  {revokeTargetDepartmentId && (
+                    <div className="share-revoke-confirm" role="group" aria-live="polite">
+                      <div>
+                        <p className="section-kicker">Xác nhận thu hồi</p>
+                        <strong>
+                          Thu hồi quyền của {departmentLabel(revokeTargetDepartmentId)}?
+                        </strong>
+                        <p>
+                          Phòng ban này sẽ không còn xem hoặc tải tài liệu nếu không có quyền khác.
+                        </p>
+                      </div>
+                      <div className="share-review-actions">
+                        <button
+                          className="quiet-button quiet-button--danger"
+                          type="button"
+                          disabled={revokingDepartmentId === revokeTargetDepartmentId}
+                          onClick={() => void handleRevokeDepartmentShare()}
+                        >
+                          Xác nhận thu hồi
+                        </button>
+                        <button
+                          className="quiet-button"
+                          type="button"
+                          disabled={revokingDepartmentId === revokeTargetDepartmentId}
+                          onClick={closeRevokeConfirmation}
+                        >
+                          Hủy
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </section>
               )}
             </>
