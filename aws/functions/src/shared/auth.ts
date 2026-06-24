@@ -22,12 +22,14 @@ export function documentPrincipalFromClaims(
   claims: Record<string, unknown> | undefined,
 ): DocumentPrincipal | null {
   const userId = claims?.sub;
+  const email = claims?.email;
   const departmentId = claims?.['custom:departmentId'];
   if (typeof userId !== 'string' || !userId || typeof departmentId !== 'string' || !departmentId) {
     return null;
   }
   return {
     userId,
+    ...(typeof email === 'string' && email.length > 0 ? { email } : {}),
     departmentId,
     roles: parseUserRoles(claims?.['cognito:groups']),
   };

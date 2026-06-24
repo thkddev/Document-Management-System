@@ -1,4 +1,5 @@
 import {
+  GetItemCommand,
   ScanCommand,
   type AttributeValue,
   type DynamoDBClient,
@@ -98,6 +99,25 @@ function canReadSummary(document: DocumentSummary, principal: DocumentPrincipal)
   return document.ownerId === principal.userId || document.departmentId === principal.departmentId;
 }
 
+async function hasApprovedDepartmentShare(
+  documentId: string,
+  departmentId: string,
+  deps: ListDocumentsDeps,
+): Promise<boolean> {
+  const response = await deps.dynamodb.send(
+    new GetItemCommand({
+      TableName: deps.tableName,
+      Key: {
+        pk: { S: `DOC#${documentId}` },
+        sk: { S: `SHARE#DEPT#${departmentId}` },
+      },
+    }),
+  );
+  if (!response.Item) return false;
+  const record = unmarshall(response.Item);
+  return record.entityType === 'DocumentDepartmentShare' && record.status === 'APPROVED';
+}
+
 export async function listAuthorizedDocuments(
   principal: DocumentPrincipal,
   deps: ListDocumentsDeps,
@@ -119,7 +139,11 @@ export async function listAuthorizedDocuments(
 
     for (const item of response.Items ?? []) {
       const parsed = parseDocumentSummary(unmarshall(item));
-      if (parsed && canReadSummary(parsed, principal)) {
+      if (
+        parsed &&
+        (canReadSummary(parsed, principal) ||
+          (await hasApprovedDepartmentShare(parsed.documentId, principal.departmentId, deps)))
+      ) {
         items.push(parsed);
       } else if (!parsed) {
         console.warn('Skipped malformed document summary record');
@@ -128,7 +152,5 @@ export async function listAuthorizedDocuments(
     exclusiveStartKey = response.LastEvaluatedKey;
   } while (exclusiveStartKey && items.length < 50);
 
-  return items
-    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
-    .slice(0, 50);
+  return items.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)).slice(0, 50);
 }

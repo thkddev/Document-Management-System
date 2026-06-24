@@ -75,6 +75,39 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+  /documents/{documentId}/department-shares:
+    parameters:
+      - $ref: '#/components/parameters/DocumentId'
+    post:
+      operationId: createDepartmentShare
+      summary: Chia sẻ tài liệu sang một phòng ban khác
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDepartmentShareRequest'
+      responses:
+        '201':
+          description: Quyền chia sẻ đã được cấp ngay
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DepartmentShareResult'
+        '202':
+          description: Yêu cầu chia sẻ đã được tạo và đang chờ duyệt
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DepartmentShareResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /documents/upload-intents:
     post:
       operationId: createUploadIntent
@@ -98,6 +131,71 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /share-requests:
+    get:
+      operationId: listPendingShareRequests
+      summary: Liệt kê yêu cầu chia sẻ đang chờ Department Admin duyệt
+      responses:
+        '200':
+          description: Danh sách yêu cầu chia sẻ đang chờ duyệt
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DepartmentShareRequestSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /share-requests/{shareRequestId}/approve:
+    parameters:
+      - $ref: '#/components/parameters/ShareRequestId'
+    post:
+      operationId: approveShareRequest
+      summary: Duyệt yêu cầu chia sẻ liên phòng ban
+      responses:
+        '200':
+          description: Yêu cầu chia sẻ đã được duyệt
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DepartmentShareDecisionResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /share-requests/{shareRequestId}/reject:
+    parameters:
+      - $ref: '#/components/parameters/ShareRequestId'
+    post:
+      operationId: rejectShareRequest
+      summary: Từ chối yêu cầu chia sẻ liên phòng ban
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RejectShareRequestRequest'
+      responses:
+        '200':
+          description: Yêu cầu chia sẻ đã bị từ chối
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DepartmentShareDecisionResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
 components:
   parameters:
     DocumentId:
@@ -105,6 +203,14 @@ components:
       in: path
       required: true
       description: Mã tài liệu
+      schema:
+        type: string
+        format: uuid
+    ShareRequestId:
+      name: shareRequestId
+      in: path
+      required: true
+      description: Mã yêu cầu chia sẻ tài liệu
       schema:
         type: string
         format: uuid
@@ -209,6 +315,82 @@ components:
           format: date-time
         fileName:
           type: string
+    CreateDepartmentShareRequest:
+      type: object
+      required: [targetDepartmentId]
+      properties:
+        targetDepartmentId:
+          type: string
+          minLength: 2
+          maxLength: 40
+          description: Phòng ban nhận quyền chia sẻ
+    DepartmentShareResult:
+      type: object
+      required: [mode, documentId, targetDepartmentId]
+      properties:
+        mode:
+          type: string
+          enum: [GRANTED, PENDING_APPROVAL]
+        documentId:
+          type: string
+          format: uuid
+        targetDepartmentId:
+          type: string
+        shareRequestId:
+          type: string
+          format: uuid
+    DepartmentShareRequestSummary:
+      type: object
+      required:
+        [
+          shareRequestId,
+          documentId,
+          title,
+          classification,
+          sourceDepartmentId,
+          targetDepartmentId,
+          requestedByEmail,
+          createdAt,
+        ]
+      properties:
+        shareRequestId:
+          type: string
+          format: uuid
+        documentId:
+          type: string
+          format: uuid
+        title:
+          type: string
+        classification:
+          type: string
+          enum: [PUBLIC, INTERNAL, CONFIDENTIAL, RESTRICTED]
+        sourceDepartmentId:
+          type: string
+        targetDepartmentId:
+          type: string
+        requestedByEmail:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    RejectShareRequestRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 3
+          maxLength: 500
+    DepartmentShareDecisionResult:
+      type: object
+      required: [shareRequestId, status]
+      properties:
+        shareRequestId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [APPROVED, REJECTED]
     CreateUploadIntentRequest:
       type: object
       required:

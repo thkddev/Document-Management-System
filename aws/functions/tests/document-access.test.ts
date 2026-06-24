@@ -1,4 +1,4 @@
-import type { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { GetItemCommand, type DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { marshall } from '@aws-sdk/util-dynamodb';
 import { describe, expect, it, vi } from 'vitest';
 import { getDocumentDetail } from '../src/services/document-access.js';
@@ -70,6 +70,35 @@ describe('getDocumentDetail', () => {
         deps({ ...record, accessScope: 'ALL_EMPLOYEES' }),
       ),
     ).resolves.toMatchObject({ documentId: 'document-1', accessScope: 'ALL_EMPLOYEES' });
+  });
+
+  it('cho phép user phòng ban nhận xem tài liệu đã được chia sẻ', async () => {
+    const send = vi.fn(async (command) => {
+      if (!(command instanceof GetItemCommand)) throw new Error('Unexpected command');
+      if (command.input.Key?.sk?.S === 'META') return { Item: marshall(record) };
+      if (command.input.Key?.sk?.S === 'SHARE#DEPT#HR') {
+        return {
+          Item: marshall({
+            entityType: 'DocumentDepartmentShare',
+            documentId: 'document-1',
+            targetDepartmentId: 'HR',
+            status: 'APPROVED',
+          }),
+        };
+      }
+      return {};
+    });
+
+    await expect(
+      getDocumentDetail(
+        'document-1',
+        { userId: 'user-3', departmentId: 'HR', roles: ['EMPLOYEE'] },
+        {
+          dynamodb: { send } as unknown as Pick<DynamoDBClient, 'send'>,
+          tableName: 'dms-test',
+        },
+      ),
+    ).resolves.toMatchObject({ documentId: 'document-1' });
   });
 
   it('trả null khi tài liệu không tồn tại', async () => {

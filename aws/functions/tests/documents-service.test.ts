@@ -1,4 +1,4 @@
-import type { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { GetItemCommand, ScanCommand, type DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { marshall } from '@aws-sdk/util-dynamodb';
 import { describe, expect, it, vi } from 'vitest';
 import type { DocumentPrincipal } from '../src/domain/models.js';
@@ -85,6 +85,34 @@ describe('listAuthorizedDocuments', () => {
         tableName: 'dms-test',
       }),
     ).resolves.toEqual([]);
+  });
+
+  it('hiển thị tài liệu phòng ban khác nếu đã được chia sẻ cho phòng ban user', async () => {
+    const send = vi.fn(async (command) => {
+      if (command instanceof ScanCommand) {
+        return {
+          Items: [marshall({ ...documentRecord, departmentId: 'HR', ownerId: 'hr-owner' })],
+        };
+      }
+      if (command instanceof GetItemCommand) {
+        return {
+          Item: marshall({
+            entityType: 'DocumentDepartmentShare',
+            documentId: 'document-1',
+            targetDepartmentId: 'TECH',
+            status: 'APPROVED',
+          }),
+        };
+      }
+      throw new Error('Unexpected command');
+    });
+
+    const items = await listAuthorizedDocuments(principal, {
+      dynamodb: { send } as unknown as Pick<DynamoDBClient, 'send'>,
+      tableName: 'dms-test',
+    });
+
+    expect(items).toEqual([expect.objectContaining({ documentId: 'document-1' })]);
   });
 
   it('System Admin thấy tài liệu phòng ban khác', async () => {

@@ -40,6 +40,28 @@ export interface DownloadIntent {
   fileName: string;
 }
 
+export interface DepartmentShareResult {
+  mode: 'GRANTED' | 'PENDING_APPROVAL';
+  documentId: string;
+  targetDepartmentId: string;
+  shareRequestId?: string;
+}
+
+export interface DepartmentShareRequestSummary {
+  shareRequestId: string;
+  documentId: string;
+  title: string;
+  classification: DocumentClassification;
+  sourceDepartmentId: string;
+  targetDepartmentId: string;
+  requestedByEmail: string;
+  createdAt: string;
+}
+
+interface ListShareRequestsResponse {
+  items: DepartmentShareRequestSummary[];
+}
+
 interface ListDocumentsResponse {
   items: DocumentSummary[];
 }
@@ -68,6 +90,46 @@ export function createDownloadIntent(documentId: string): Promise<DownloadIntent
   return apiFetch<DownloadIntent>(`/documents/${encodeURIComponent(documentId)}/download-intents`, {
     method: 'POST',
   });
+}
+
+export function createDepartmentShare(
+  documentId: string,
+  targetDepartmentId: string,
+): Promise<DepartmentShareResult> {
+  return apiFetch<DepartmentShareResult>(
+    `/documents/${encodeURIComponent(documentId)}/department-shares`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ targetDepartmentId }),
+    },
+  );
+}
+
+export async function listPendingShareRequests(): Promise<DepartmentShareRequestSummary[]> {
+  const response = await apiFetch<ListShareRequestsResponse>('/share-requests');
+  return response.items;
+}
+
+export function approveShareRequest(
+  shareRequestId: string,
+): Promise<{ shareRequestId: string; status: 'APPROVED' }> {
+  return apiFetch<{ shareRequestId: string; status: 'APPROVED' }>(
+    `/share-requests/${encodeURIComponent(shareRequestId)}/approve`,
+    { method: 'POST' },
+  );
+}
+
+export function rejectShareRequest(
+  shareRequestId: string,
+  reason: string,
+): Promise<{ shareRequestId: string; status: 'REJECTED' }> {
+  return apiFetch<{ shareRequestId: string; status: 'REJECTED' }>(
+    `/share-requests/${encodeURIComponent(shareRequestId)}/reject`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    },
+  );
 }
 
 export function triggerBrowserDownload(intent: DownloadIntent): void {

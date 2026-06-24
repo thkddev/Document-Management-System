@@ -235,6 +235,26 @@ export class DmsStack extends cdk.Stack {
     table.grantReadWriteData(downloadIntentFunction);
     documentsBucket.grantRead(downloadIntentFunction);
 
+    const documentSharingFunction = new lambda.Function(this, 'DocumentSharingFunction', {
+      code: lambda.Code.fromAsset(path.join(currentDirectory, '../../functions/dist')),
+      handler: 'handlers/document-sharing.handler',
+      runtime: lambda.Runtime.NODEJS_22_X,
+      architecture: lambda.Architecture.ARM_64,
+      memorySize: 256,
+      timeout: cdk.Duration.seconds(15),
+      tracing: lambda.Tracing.ACTIVE,
+      logGroup: new logs.LogGroup(this, 'DocumentSharingFunctionLogs', {
+        retention: isProduction ? logs.RetentionDays.THREE_MONTHS : logs.RetentionDays.TWO_WEEKS,
+        removalPolicy,
+      }),
+      environment: {
+        TABLE_NAME: table.tableName,
+        ENVIRONMENT_NAME: props.environmentName,
+        CORS_ALLOW_ORIGIN: corsAllowOrigin,
+      },
+    });
+    table.grantReadWriteData(documentSharingFunction);
+
     const uploadIntentFunction = new lambda.Function(this, 'UploadIntentFunction', {
       code: lambda.Code.fromAsset(path.join(currentDirectory, '../../functions/dist')),
       handler: 'handlers/upload-intents.handler',
@@ -534,10 +554,39 @@ export class DmsStack extends cdk.Stack {
         authorizer,
         authorizationType: apigateway.AuthorizationType.COGNITO,
       });
+    documentResource
+      .addResource('department-shares')
+      .addMethod('POST', new apigateway.LambdaIntegration(documentSharingFunction), {
+        authorizer,
+        authorizationType: apigateway.AuthorizationType.COGNITO,
+      });
 
     documentsResource
       .addResource('upload-intents')
       .addMethod('POST', new apigateway.LambdaIntegration(uploadIntentFunction), {
+        authorizer,
+        authorizationType: apigateway.AuthorizationType.COGNITO,
+      });
+
+    const shareRequestsResource = api.root.addResource('share-requests');
+    shareRequestsResource.addMethod(
+      'GET',
+      new apigateway.LambdaIntegration(documentSharingFunction),
+      {
+        authorizer,
+        authorizationType: apigateway.AuthorizationType.COGNITO,
+      },
+    );
+    const shareRequestResource = shareRequestsResource.addResource('{shareRequestId}');
+    shareRequestResource
+      .addResource('approve')
+      .addMethod('POST', new apigateway.LambdaIntegration(documentSharingFunction), {
+        authorizer,
+        authorizationType: apigateway.AuthorizationType.COGNITO,
+      });
+    shareRequestResource
+      .addResource('reject')
+      .addMethod('POST', new apigateway.LambdaIntegration(documentSharingFunction), {
         authorizer,
         authorizationType: apigateway.AuthorizationType.COGNITO,
       });

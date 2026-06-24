@@ -140,6 +140,26 @@ describe('DmsStack', () => {
     });
   });
 
+  it('cấu hình route chia sẻ tài liệu liên phòng ban bằng Cognito', () => {
+    const template = synthesizeTemplate();
+
+    template.hasResourceProperties('AWS::Lambda::Function', {
+      Handler: 'handlers/document-sharing.handler',
+      Runtime: 'nodejs22.x',
+      Environment: {
+        Variables: Match.objectLike({ TABLE_NAME: Match.anyValue() }),
+      },
+    });
+    template.hasResourceProperties('AWS::ApiGateway::Method', {
+      HttpMethod: 'GET',
+      AuthorizationType: 'COGNITO_USER_POOLS',
+    });
+    template.hasResourceProperties('AWS::ApiGateway::Method', {
+      HttpMethod: 'POST',
+      AuthorizationType: 'COGNITO_USER_POOLS',
+    });
+  });
+
   it('cấu hình S3 -> SQS -> Lambda với DLQ và partial batch failure', () => {
     const template = synthesizeTemplate();
 

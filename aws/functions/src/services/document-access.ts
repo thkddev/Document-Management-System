@@ -103,6 +103,25 @@ function canAccessDocument(document: DocumentDetail, principal: DocumentPrincipa
   );
 }
 
+async function hasApprovedDepartmentShare(
+  documentId: string,
+  departmentId: string,
+  deps: DocumentAccessDeps,
+): Promise<boolean> {
+  const response = await deps.dynamodb.send(
+    new GetItemCommand({
+      TableName: deps.tableName,
+      Key: {
+        pk: { S: `DOC#${documentId}` },
+        sk: { S: `SHARE#DEPT#${departmentId}` },
+      },
+    }),
+  );
+  if (!response.Item) return false;
+  const item = unmarshall(response.Item);
+  return item.entityType === 'DocumentDepartmentShare' && item.status === 'APPROVED';
+}
+
 export async function loadAuthorizedDocument(
   documentId: string,
   principal: DocumentPrincipal,
@@ -117,7 +136,14 @@ export async function loadAuthorizedDocument(
   if (!response.Item) return null;
 
   const document = parseDocument(unmarshall(response.Item));
-  return canAccessDocument(document.detail, principal) ? document : null;
+  if (canAccessDocument(document.detail, principal)) return document;
+  return (await hasApprovedDepartmentShare(
+    document.detail.documentId,
+    principal.departmentId,
+    deps,
+  ))
+    ? document
+    : null;
 }
 
 export async function getDocumentDetail(

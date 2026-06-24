@@ -23,6 +23,10 @@ export const documentAccessScopes = ['DEPARTMENT', 'ALL_EMPLOYEES'] as const;
 
 export type DocumentAccessScope = (typeof documentAccessScopes)[number];
 
+export const departmentShareStatuses = ['PENDING', 'APPROVED', 'REJECTED'] as const;
+
+export type DepartmentShareStatus = (typeof departmentShareStatuses)[number];
+
 export const documentStatuses = [
   'UPLOAD_PENDING',
   'UPLOADED',
@@ -88,6 +92,7 @@ export interface DocumentPrincipal {
   userId: string;
   departmentId: string;
   roles: UserRole[];
+  email?: string;
 }
 
 export interface ListDocumentsResponse {
@@ -104,6 +109,10 @@ export const auditActions = [
   'PROCESSING_FAILED',
   'MESSAGE_DEAD_LETTERED',
   'DOCUMENT_DOWNLOAD_REQUESTED',
+  'DOCUMENT_SHARE_REQUESTED',
+  'DOCUMENT_SHARE_GRANTED',
+  'DOCUMENT_SHARE_APPROVED',
+  'DOCUMENT_SHARE_REJECTED',
 ] as const;
 
 export type AuditAction = (typeof auditActions)[number];

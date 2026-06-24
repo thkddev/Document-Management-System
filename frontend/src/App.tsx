@@ -26,9 +26,13 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from './features/auth/AuthContext';
 import {
   createDownloadIntent as requestDownloadIntent,
+  approveShareRequest,
   hasProcessingDocuments,
+  listPendingShareRequests,
   listDocuments,
+  rejectShareRequest,
   triggerBrowserDownload,
+  type DepartmentShareRequestSummary,
   type DocumentStatus,
   type DocumentSummary,
 } from './lib/documents';
@@ -132,6 +136,12 @@ const navItems = [
   { label: 'Gần đây', icon: Clock3 },
   { label: 'Đã đánh dấu', icon: Star },
 ];
+
+export const departmentOptions = [
+  { id: 'HR', label: 'Nhân sự' },
+  { id: 'TECH', label: 'Kỹ thuật' },
+  { id: 'SA', label: 'Kinh doanh' },
+] as const;
 
 const activities = [
   { time: '10:15', action: 'Trần Minh tạo phiên bản 7', target: 'Đặc tả DMS' },
@@ -286,11 +296,17 @@ export function App() {
   const [documentsError, setDocumentsError] = useState('');
   const [downloadError, setDownloadError] = useState('');
   const [downloadingDocumentId, setDownloadingDocumentId] = useState<string | null>(null);
+  const [shareRequests, setShareRequests] = useState<DepartmentShareRequestSummary[]>([]);
+  const [shareRequestsError, setShareRequestsError] = useState('');
+  const [reviewingShareRequestId, setReviewingShareRequestId] = useState<string | null>(null);
 
   // currentUser luôn có giá trị khi App được render (ProtectedRoute đảm bảo điều này)
   const displayName = currentUser?.displayName ?? '';
   const departmentId = currentUser?.departmentId ?? '';
   const canPublishToAllEmployees = currentUser?.roles.includes('SYSTEM_ADMIN') ?? false;
+  const canReviewShareRequests =
+    currentUser?.roles.some((role) => role === 'DEPARTMENT_ADMIN' || role === 'SYSTEM_ADMIN') ??
+    false;
   const initials = toInitials(displayName);
   const documents = useMemo(() => documentSummaries.map(toDocumentItem), [documentSummaries]);
   const processingCount = documentSummaries.filter((document) =>
@@ -319,6 +335,23 @@ export function App() {
     const timer = window.setInterval(() => void refreshDocuments(), 5000);
     return () => window.clearInterval(timer);
   }, [documentSummaries, refreshDocuments]);
+
+  const refreshShareRequests = useCallback(async (): Promise<void> => {
+    if (!canReviewShareRequests) {
+      setShareRequests([]);
+      return;
+    }
+    try {
+      setShareRequests(await listPendingShareRequests());
+      setShareRequestsError('');
+    } catch {
+      setShareRequestsError('Không thể tải yêu cầu chia sẻ chờ duyệt.');
+    }
+  }, [canReviewShareRequests]);
+
+  useEffect(() => {
+    void refreshShareRequests();
+  }, [refreshShareRequests]);
 
   useEffect(() => {
     if (!canPublishToAllEmployees && uploadAccessScope !== 'DEPARTMENT') {
@@ -388,6 +421,38 @@ export function App() {
       );
     } finally {
       setDownloadingDocumentId(null);
+    }
+  }
+
+  async function handleApproveShareRequest(shareRequestId: string): Promise<void> {
+    setReviewingShareRequestId(shareRequestId);
+    setShareRequestsError('');
+    try {
+      await approveShareRequest(shareRequestId);
+      await Promise.all([refreshShareRequests(), refreshDocuments()]);
+    } catch (err) {
+      setShareRequestsError(
+        err instanceof Error ? err.message : 'Không thể duyệt yêu cầu chia sẻ.',
+      );
+    } finally {
+      setReviewingShareRequestId(null);
+    }
+  }
+
+  async function handleRejectShareRequest(shareRequestId: string): Promise<void> {
+    const reason = window.prompt('Nhập lý do từ chối chia sẻ:')?.trim() ?? '';
+    if (!reason) return;
+    setReviewingShareRequestId(shareRequestId);
+    setShareRequestsError('');
+    try {
+      await rejectShareRequest(shareRequestId, reason);
+      await refreshShareRequests();
+    } catch (err) {
+      setShareRequestsError(
+        err instanceof Error ? err.message : 'Không thể từ chối yêu cầu chia sẻ.',
+      );
+    } finally {
+      setReviewingShareRequestId(null);
     }
   }
 
@@ -555,7 +620,7 @@ export function App() {
             <div className="attention-item">
               <FileClock size={20} />
               <span>
-                <strong>2 yêu cầu xem tài liệu</strong>
+                <strong>{shareRequests.length} yêu cầu chia sẻ</strong>
                 <small>Đang chờ bạn phản hồi</small>
               </span>
             </div>
@@ -695,6 +760,61 @@ export function App() {
             </section>
 
             <aside className="activity-panel" aria-labelledby="activity-heading">
+              {canReviewShareRequests && (
+                <section className="share-review-panel" aria-labelledby="share-review-heading">
+                  <div className="panel-heading panel-heading--compact">
+                    <div>
+                      <p className="section-kicker">Duyệt chia sẻ</p>
+                      <h2 id="share-review-heading">Yêu cầu chia sẻ chờ duyệt</h2>
+                    </div>
+                    <Users size={19} />
+                  </div>
+
+                  {shareRequestsError && (
+                    <p className="document-load-error" role="alert">
+                      {shareRequestsError}
+                    </p>
+                  )}
+
+                  {shareRequests.length === 0 && !shareRequestsError ? (
+                    <p className="share-review-empty">Không có yêu cầu nào đang chờ.</p>
+                  ) : (
+                    <ul className="share-review-list">
+                      {shareRequests.map((request) => (
+                        <li key={request.shareRequestId}>
+                          <div>
+                            <strong>{request.title}</strong>
+                            <span>
+                              {classificationLabels[request.classification]} ·{' '}
+                              {request.sourceDepartmentId} → {request.targetDepartmentId}
+                            </span>
+                            <small>
+                              {request.requestedByEmail} · {formatUpdatedAt(request.createdAt)}
+                            </small>
+                          </div>
+                          <div className="share-review-actions">
+                            <button
+                              className="quiet-button"
+                              disabled={reviewingShareRequestId === request.shareRequestId}
+                              onClick={() => void handleApproveShareRequest(request.shareRequestId)}
+                            >
+                              Duyệt
+                            </button>
+                            <button
+                              className="quiet-button quiet-button--danger"
+                              disabled={reviewingShareRequestId === request.shareRequestId}
+                              onClick={() => void handleRejectShareRequest(request.shareRequestId)}
+                            >
+                              Từ chối
+                            </button>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+              )}
+
               <div className="panel-heading panel-heading--compact">
                 <div>
                   <p className="section-kicker">Dòng thời gian</p>

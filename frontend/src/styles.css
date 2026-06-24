@@ -700,6 +700,15 @@ select:focus-visible {
   background: white;
 }
 
+.quiet-button--danger {
+  color: var(--red);
+  border-color: rgba(156, 73, 60, 0.32);
+}
+
+.quiet-button--danger:hover {
+  background: rgba(156, 73, 60, 0.08);
+}
+
 .document-header,
 .document-row {
   display: grid;
@@ -1267,6 +1276,107 @@ select:focus-visible {
 
 .detail-guidance dl {
   margin: 0;
+}
+
+.share-section {
+  margin-top: 34px;
+}
+
+.share-form {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+  margin-top: 18px;
+}
+
+.share-form label {
+  display: grid;
+  gap: 7px;
+}
+
+.share-form label span {
+  color: var(--muted);
+  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.share-form select {
+  height: 40px;
+  padding: 0 12px;
+  background: #f3f5f2;
+  border: 1px solid var(--rule);
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.share-form select:focus-visible {
+  outline: none;
+  border-color: var(--ledger-blue);
+  box-shadow: 0 0 0 3px rgba(46, 97, 112, 0.14);
+}
+
+.share-hint {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.share-review-panel {
+  margin-bottom: 30px;
+}
+
+.share-review-empty {
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.share-review-list {
+  display: grid;
+  gap: 12px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.share-review-list li {
+  display: grid;
+  gap: 10px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.share-review-list strong,
+.share-review-list span,
+.share-review-list small {
+  display: block;
+}
+
+.share-review-list strong {
+  font-size: 12px;
+}
+
+.share-review-list span {
+  margin-top: 4px;
+  color: var(--ledger-blue);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.share-review-list small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.share-review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
 }
 
 .detail-state {

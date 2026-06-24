@@ -6,6 +6,7 @@ import {
   CircleUserRound,
   Download,
   FileClock,
+  Send,
   Menu,
   ShieldCheck,
   X,
@@ -16,6 +17,7 @@ import {
   NavContent,
   accessScopeLabels,
   classificationLabels,
+  departmentOptions,
   fileType,
   formatSize,
   formatUpdatedAt,
@@ -25,6 +27,7 @@ import {
 import { useAuth } from '../features/auth/AuthContext';
 import { ApiRequestError } from '../lib/api-client';
 import {
+  createDepartmentShare,
   createDownloadIntent,
   getDocumentDetail,
   triggerBrowserDownload,
@@ -41,6 +44,10 @@ export function DocumentDetailPage() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState('');
+  const [targetDepartmentId, setTargetDepartmentId] = useState('');
+  const [sharing, setSharing] = useState(false);
+  const [shareMessage, setShareMessage] = useState('');
+  const [shareError, setShareError] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -86,6 +93,36 @@ export function DocumentDetailPage() {
 
   const displayName = currentUser?.displayName ?? '';
   const departmentId = currentUser?.departmentId ?? '';
+  const canCreateDepartmentShare =
+    !!document &&
+    !!currentUser &&
+    (document.ownerId === currentUser.userId ||
+      document.departmentId === currentUser.departmentId ||
+      currentUser.roles.includes('SYSTEM_ADMIN'));
+  const shareDepartmentOptions = departmentOptions.filter(
+    (item) => item.id !== document?.departmentId,
+  );
+  const requiresShareApproval =
+    document?.classification === 'CONFIDENTIAL' || document?.classification === 'RESTRICTED';
+
+  async function handleDepartmentShare(): Promise<void> {
+    if (!document || !targetDepartmentId) return;
+    setSharing(true);
+    setShareMessage('');
+    setShareError('');
+    try {
+      const result = await createDepartmentShare(document.documentId, targetDepartmentId);
+      setShareMessage(
+        result.mode === 'GRANTED'
+          ? 'Đã chia sẻ tài liệu cho phòng ban đã chọn.'
+          : 'Đã gửi yêu cầu duyệt chia sẻ.',
+      );
+    } catch (err) {
+      setShareError(err instanceof Error ? err.message : 'Không thể chia sẻ tài liệu.');
+    } finally {
+      setSharing(false);
+    }
+  }
 
   return (
     <div className="app-shell">
@@ -281,6 +318,50 @@ export function DocumentDetailPage() {
                   </dl>
                 </aside>
               </div>
+
+              {canCreateDepartmentShare && (
+                <section className="detail-section share-section" aria-labelledby="share-heading">
+                  <div className="detail-section-heading">
+                    <p className="section-kicker">Chia sẻ an toàn</p>
+                    <h2 id="share-heading">Chia sẻ phòng ban</h2>
+                  </div>
+                  <div className="share-form">
+                    <label>
+                      <span>Phòng ban nhận</span>
+                      <select
+                        value={targetDepartmentId}
+                        onChange={(event) => setTargetDepartmentId(event.target.value)}
+                        disabled={sharing}
+                      >
+                        <option value="">Chọn phòng ban</option>
+                        {shareDepartmentOptions.map((department) => (
+                          <option key={department.id} value={department.id}>
+                            {department.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <button
+                      className="primary-action"
+                      type="button"
+                      disabled={!targetDepartmentId || sharing}
+                      onClick={() => void handleDepartmentShare()}
+                    >
+                      <Send size={18} />
+                      {sharing ? 'Đang xử lý' : 'Chia sẻ'}
+                    </button>
+                  </div>
+                  {requiresShareApproval && (
+                    <p className="share-hint">
+                      Tài liệu nhạy cảm cần Department Admin phê duyệt trước khi chia sẻ.
+                    </p>
+                  )}
+                  {shareMessage && (
+                    <p className="upload-status upload-status--success">{shareMessage}</p>
+                  )}
+                  {shareError && <p className="upload-status upload-status--error">{shareError}</p>}
+                </section>
+              )}
             </>
           )}
         </section>
