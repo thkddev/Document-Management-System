@@ -678,6 +678,13 @@ select:focus-visible {
   letter-spacing: -0.02em;
 }
 
+.panel-heading small {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
 .panel-tools {
   display: flex;
   gap: 7px;
@@ -1329,10 +1336,45 @@ select:focus-visible {
   margin-bottom: 30px;
 }
 
+.share-review-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 13px;
+}
+
+.share-review-filter {
+  min-height: 28px;
+  padding: 0 10px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid #cdd4cd;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.share-review-filter:hover,
+.share-review-filter.is-active {
+  color: white;
+  background: var(--deep-teal);
+  border-color: var(--deep-teal);
+}
+
 .share-review-empty {
   margin: 14px 0 0;
   color: var(--muted);
   font-size: 11px;
+}
+
+.share-review-message {
+  margin: 12px 0 0;
+  padding: 9px 10px;
+  color: var(--green);
+  background: #e3eee7;
+  border: 1px solid #bed4c7;
+  font-size: 10px;
+  font-weight: 700;
 }
 
 .share-review-list {
@@ -1346,7 +1388,7 @@ select:focus-visible {
 .share-review-list li {
   display: grid;
   gap: 10px;
-  padding: 12px 0;
+  padding: 13px 0;
   border-bottom: 1px solid var(--rule);
 }
 
@@ -1367,6 +1409,50 @@ select:focus-visible {
   font-weight: 700;
 }
 
+.share-review-list .share-review-label {
+  display: inline-flex;
+  width: fit-content;
+  padding: 3px 6px;
+  color: #87473e;
+  background: #f2e2dd;
+  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-size: 8px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.share-review-list dl {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+  margin: 10px 0 0;
+}
+
+.share-review-list dl div {
+  min-width: 0;
+  padding: 7px 8px;
+  background: rgba(255, 255, 255, 0.42);
+  border: 1px solid #d7ded7;
+}
+
+.share-review-list dt {
+  color: var(--muted);
+  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.share-review-list dd {
+  margin: 3px 0 0;
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .share-review-list small {
   margin-top: 4px;
   color: var(--muted);
@@ -1377,6 +1463,48 @@ select:focus-visible {
   display: flex;
   flex-wrap: wrap;
   gap: 7px;
+}
+
+.share-reject-form {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 13px;
+  background: rgba(156, 73, 60, 0.06);
+  border: 1px solid rgba(156, 73, 60, 0.25);
+}
+
+.share-reject-form strong {
+  display: block;
+  margin-top: 5px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.share-reject-form textarea {
+  width: 100%;
+  min-height: 82px;
+  resize: vertical;
+  padding: 9px 10px;
+  color: var(--ink);
+  background: #f8faf6;
+  border: 1px solid var(--rule);
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.share-reject-form textarea:focus-visible {
+  outline: none;
+  border-color: var(--ledger-blue);
+  box-shadow: 0 0 0 3px rgba(46, 97, 112, 0.14);
+}
+
+.share-reject-error {
+  margin: -2px 0 0;
+  color: var(--red);
+  font-size: 10px;
+  font-weight: 700;
 }
 
 .detail-state {

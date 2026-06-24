@@ -45,6 +45,7 @@ import {
 } from './lib/uploads';
 
 type Classification = 'Công khai' | 'Nội bộ' | 'Mật' | 'Hạn chế';
+type ShareRequestFilter = 'ALL' | 'CONFIDENTIAL' | 'RESTRICTED';
 
 interface DocumentItem {
   id: string;
@@ -154,6 +155,12 @@ const uploadClassifications: Array<{ value: DocumentClassification; label: strin
   { value: 'CONFIDENTIAL', label: 'Mật' },
   { value: 'RESTRICTED', label: 'Hạn chế' },
   { value: 'PUBLIC', label: 'Công khai' },
+];
+
+const shareRequestFilters: Array<{ value: ShareRequestFilter; label: string }> = [
+  { value: 'ALL', label: 'Tất cả' },
+  { value: 'CONFIDENTIAL', label: 'Mật' },
+  { value: 'RESTRICTED', label: 'Hạn chế' },
 ];
 
 function inferContentType(file: File): string {
@@ -298,7 +305,13 @@ export function App() {
   const [downloadingDocumentId, setDownloadingDocumentId] = useState<string | null>(null);
   const [shareRequests, setShareRequests] = useState<DepartmentShareRequestSummary[]>([]);
   const [shareRequestsError, setShareRequestsError] = useState('');
+  const [shareReviewMessage, setShareReviewMessage] = useState('');
   const [reviewingShareRequestId, setReviewingShareRequestId] = useState<string | null>(null);
+  const [shareRequestFilter, setShareRequestFilter] = useState<ShareRequestFilter>('ALL');
+  const [rejectingShareRequest, setRejectingShareRequest] =
+    useState<DepartmentShareRequestSummary | null>(null);
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [rejectionError, setRejectionError] = useState('');
 
   // currentUser luôn có giá trị khi App được render (ProtectedRoute đảm bảo điều này)
   const displayName = currentUser?.displayName ?? '';
@@ -312,6 +325,10 @@ export function App() {
   const processingCount = documentSummaries.filter((document) =>
     hasProcessingDocuments([document]),
   ).length;
+  const filteredShareRequests = useMemo(() => {
+    if (shareRequestFilter === 'ALL') return shareRequests;
+    return shareRequests.filter((request) => request.classification === shareRequestFilter);
+  }, [shareRequestFilter, shareRequests]);
 
   const refreshDocuments = useCallback(async (showLoading = false): Promise<void> => {
     if (showLoading) setDocumentsLoading(true);
@@ -339,6 +356,8 @@ export function App() {
   const refreshShareRequests = useCallback(async (): Promise<void> => {
     if (!canReviewShareRequests) {
       setShareRequests([]);
+      setShareReviewMessage('');
+      setRejectingShareRequest(null);
       return;
     }
     try {
@@ -427,29 +446,60 @@ export function App() {
   async function handleApproveShareRequest(shareRequestId: string): Promise<void> {
     setReviewingShareRequestId(shareRequestId);
     setShareRequestsError('');
+    setShareReviewMessage('');
     try {
       await approveShareRequest(shareRequestId);
       await Promise.all([refreshShareRequests(), refreshDocuments()]);
+      setShareReviewMessage('Đã duyệt yêu cầu chia sẻ.');
     } catch (err) {
       setShareRequestsError(
-        err instanceof Error ? err.message : 'Không thể duyệt yêu cầu chia sẻ.',
+        err instanceof Error
+          ? err.message
+          : 'Không thể duyệt yêu cầu chia sẻ. Vui lòng thử lại.',
       );
     } finally {
       setReviewingShareRequestId(null);
     }
   }
 
-  async function handleRejectShareRequest(shareRequestId: string): Promise<void> {
-    const reason = window.prompt('Nhập lý do từ chối chia sẻ:')?.trim() ?? '';
-    if (!reason) return;
-    setReviewingShareRequestId(shareRequestId);
+  function openRejectShareRequest(request: DepartmentShareRequestSummary): void {
+    setRejectingShareRequest(request);
+    setRejectionReason('');
+    setRejectionError('');
     setShareRequestsError('');
+    setShareReviewMessage('');
+  }
+
+  function closeRejectShareRequest(): void {
+    setRejectingShareRequest(null);
+    setRejectionReason('');
+    setRejectionError('');
+  }
+
+  async function handleRejectShareRequest(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    if (!rejectingShareRequest) return;
+
+    const reason = rejectionReason.trim();
+    if (reason.length < 3) {
+      setRejectionError('Vui lòng nhập lý do từ chối từ 3 ký tự trở lên.');
+      return;
+    }
+
+    setReviewingShareRequestId(rejectingShareRequest.shareRequestId);
+    setShareRequestsError('');
+    setShareReviewMessage('');
+    setRejectionError('');
     try {
-      await rejectShareRequest(shareRequestId, reason);
+      await rejectShareRequest(rejectingShareRequest.shareRequestId, reason);
       await refreshShareRequests();
+      setShareReviewMessage('Đã từ chối yêu cầu chia sẻ.');
+      closeRejectShareRequest();
     } catch (err) {
       setShareRequestsError(
-        err instanceof Error ? err.message : 'Không thể từ chối yêu cầu chia sẻ.',
+        err instanceof Error
+          ? err.message
+          : 'Không thể từ chối yêu cầu chia sẻ. Vui lòng thử lại.',
       );
     } finally {
       setReviewingShareRequestId(null);
@@ -766,8 +816,27 @@ export function App() {
                     <div>
                       <p className="section-kicker">Duyệt chia sẻ</p>
                       <h2 id="share-review-heading">Yêu cầu chia sẻ chờ duyệt</h2>
+                      <small>{shareRequests.length} yêu cầu đang chờ</small>
                     </div>
                     <Users size={19} />
+                  </div>
+
+                  <div className="share-review-filters" aria-label="Lọc yêu cầu chia sẻ">
+                    {shareRequestFilters.map((filter) => (
+                      <button
+                        key={filter.value}
+                        className={
+                          shareRequestFilter === filter.value
+                            ? 'share-review-filter is-active'
+                            : 'share-review-filter'
+                        }
+                        type="button"
+                        aria-pressed={shareRequestFilter === filter.value}
+                        onClick={() => setShareRequestFilter(filter.value)}
+                      >
+                        {filter.label}
+                      </button>
+                    ))}
                   </div>
 
                   {shareRequestsError && (
@@ -775,19 +844,35 @@ export function App() {
                       {shareRequestsError}
                     </p>
                   )}
+                  {shareReviewMessage && (
+                    <p className="share-review-message" role="status">
+                      {shareReviewMessage}
+                    </p>
+                  )}
 
                   {shareRequests.length === 0 && !shareRequestsError ? (
                     <p className="share-review-empty">Không có yêu cầu nào đang chờ.</p>
+                  ) : filteredShareRequests.length === 0 && !shareRequestsError ? (
+                    <p className="share-review-empty">Không có yêu cầu phù hợp bộ lọc.</p>
                   ) : (
                     <ul className="share-review-list">
-                      {shareRequests.map((request) => (
+                      {filteredShareRequests.map((request) => (
                         <li key={request.shareRequestId}>
                           <div>
                             <strong>{request.title}</strong>
-                            <span>
-                              {classificationLabels[request.classification]} ·{' '}
-                              {request.sourceDepartmentId} → {request.targetDepartmentId}
+                            <span className="share-review-label">
+                              {classificationLabels[request.classification]}
                             </span>
+                            <dl>
+                              <div>
+                                <dt>Sở hữu</dt>
+                                <dd>{request.sourceDepartmentId}</dd>
+                              </div>
+                              <div>
+                                <dt>Nhận</dt>
+                                <dd>{request.targetDepartmentId}</dd>
+                              </div>
+                            </dl>
                             <small>
                               {request.requestedByEmail} · {formatUpdatedAt(request.createdAt)}
                             </small>
@@ -803,7 +888,7 @@ export function App() {
                             <button
                               className="quiet-button quiet-button--danger"
                               disabled={reviewingShareRequestId === request.shareRequestId}
-                              onClick={() => void handleRejectShareRequest(request.shareRequestId)}
+                              onClick={() => openRejectShareRequest(request)}
                             >
                               Từ chối
                             </button>
@@ -811,6 +896,49 @@ export function App() {
                         </li>
                       ))}
                     </ul>
+                  )}
+
+                  {rejectingShareRequest && (
+                    <form className="share-reject-form" onSubmit={handleRejectShareRequest}>
+                      <div>
+                        <p className="section-kicker">Lý do từ chối</p>
+                        <strong>{rejectingShareRequest.title}</strong>
+                      </div>
+                      <label>
+                        <span className="sr-only">Lý do từ chối</span>
+                        <textarea
+                          value={rejectionReason}
+                          onChange={(event) => setRejectionReason(event.target.value)}
+                          placeholder="Nhập lý do để người yêu cầu biết cần điều chỉnh gì."
+                          disabled={
+                            reviewingShareRequestId === rejectingShareRequest.shareRequestId
+                          }
+                          rows={3}
+                        />
+                      </label>
+                      {rejectionError && (
+                        <p className="share-reject-error" role="alert">
+                          {rejectionError}
+                        </p>
+                      )}
+                      <div className="share-review-actions">
+                        <button
+                          className="quiet-button quiet-button--danger"
+                          type="submit"
+                          disabled={reviewingShareRequestId === rejectingShareRequest.shareRequestId}
+                        >
+                          Xác nhận từ chối
+                        </button>
+                        <button
+                          className="quiet-button"
+                          type="button"
+                          disabled={reviewingShareRequestId === rejectingShareRequest.shareRequestId}
+                          onClick={closeRejectShareRequest}
+                        >
+                          Hủy
+                        </button>
+                      </div>
+                    </form>
                   )}
                 </section>
               )}
