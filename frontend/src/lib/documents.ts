@@ -71,11 +71,5 @@ export function createDownloadIntent(documentId: string): Promise<DownloadIntent
 }
 
 export function triggerBrowserDownload(intent: DownloadIntent): void {
-  const link = document.createElement('a');
-  link.href = intent.downloadUrl;
-  link.download = intent.fileName;
-  link.rel = 'noopener';
-  document.body.append(link);
-  link.click();
-  link.remove();
+  window.location.assign(intent.downloadUrl);
 }
