@@ -61,6 +61,45 @@ const readyDocument = {
   updatedAt: '2026-06-20T06:30:28.640Z',
 };
 
+const scanningDocument = {
+  ...readyDocument,
+  documentId: 'document-2',
+  title: 'Quy trình toàn công ty',
+  originalFileName: 'quy-trinh.pdf',
+  classification: 'PUBLIC',
+  departmentId: 'HR',
+  ownerId: 'user-2',
+  ownerEmail: 'hr@example.com',
+  accessScope: 'ALL_EMPLOYEES',
+  status: 'SCANNING',
+};
+
+const rejectedDocument = {
+  ...readyDocument,
+  documentId: 'document-3',
+  title: 'Tài liệu định dạng lỗi',
+  originalFileName: 'loi.pdf',
+  classification: 'RESTRICTED',
+  departmentId: 'SA',
+  ownerId: 'user-3',
+  ownerEmail: 'sales@example.com',
+  accessScope: 'DEPARTMENT',
+  status: 'REJECTED',
+  statusReason: 'Không thể nhận diện định dạng thực của file.',
+};
+
+function makeDocument(index: number, overrides: Record<string, unknown> = {}) {
+  return {
+    ...readyDocument,
+    documentId: `document-${index}`,
+    title: `Tài liệu ${String(index).padStart(2, '0')}`,
+    originalFileName: `tai-lieu-${index}.pdf`,
+    ownerEmail: `user-${index}@example.com`,
+    updatedAt: `2026-06-${String(Math.min(index, 28)).padStart(2, '0')}T06:00:00.000Z`,
+    ...overrides,
+  };
+}
+
 const pendingShareRequests = [
   {
     shareRequestId: 'share-request-1',
@@ -123,7 +162,7 @@ describe('App', () => {
 
     expect(screen.getByRole('heading', { name: 'Tài liệu cần bạn chú ý' })).toBeInTheDocument();
     expect(await screen.findByText('Báo cáo tuần kỹ thuật')).toBeInTheDocument();
-    expect(screen.getByText('Sẵn sàng')).toBeInTheDocument();
+    expect(screen.getAllByText('Sẵn sàng').length).toBeGreaterThan(0);
   });
 
   it('lọc tài liệu theo từ khóa', async () => {
@@ -135,8 +174,148 @@ describe('App', () => {
       target: { value: 'không tồn tại' },
     });
 
-    expect(screen.getByText('Không tìm thấy tài liệu')).toBeInTheDocument();
+    expect(screen.getByText('Không tìm thấy tài liệu phù hợp')).toBeInTheDocument();
     expect(screen.queryByText('Báo cáo tuần kỹ thuật')).not.toBeInTheDocument();
+  });
+
+  it('lọc tài liệu theo trạng thái đang xử lý', async () => {
+    mocks.listDocuments.mockResolvedValue([readyDocument, scanningDocument, rejectedDocument]);
+    renderApp();
+
+    await screen.findByText('Báo cáo tuần kỹ thuật');
+
+    fireEvent.change(screen.getByLabelText('Trạng thái'), {
+      target: { value: 'PROCESSING' },
+    });
+
+    expect(screen.getByText('Quy trình toàn công ty')).toBeInTheDocument();
+    expect(screen.queryByText('Báo cáo tuần kỹ thuật')).not.toBeInTheDocument();
+    expect(screen.queryByText('Tài liệu định dạng lỗi')).not.toBeInTheDocument();
+  });
+
+  it('lọc tài liệu theo phân loại', async () => {
+    mocks.listDocuments.mockResolvedValue([readyDocument, scanningDocument, rejectedDocument]);
+    renderApp();
+
+    await screen.findByText('Báo cáo tuần kỹ thuật');
+
+    fireEvent.change(screen.getByLabelText('Phân loại'), {
+      target: { value: 'RESTRICTED' },
+    });
+
+    expect(screen.getByText('Tài liệu định dạng lỗi')).toBeInTheDocument();
+    expect(screen.queryByText('Báo cáo tuần kỹ thuật')).not.toBeInTheDocument();
+    expect(screen.queryByText('Quy trình toàn công ty')).not.toBeInTheDocument();
+  });
+
+  it('lọc tài liệu theo phạm vi toàn bộ nhân viên', async () => {
+    mocks.listDocuments.mockResolvedValue([readyDocument, scanningDocument, rejectedDocument]);
+    renderApp();
+
+    await screen.findByText('Báo cáo tuần kỹ thuật');
+
+    fireEvent.change(screen.getByLabelText('Phạm vi'), {
+      target: { value: 'ALL_EMPLOYEES' },
+    });
+
+    expect(screen.getByText('Quy trình toàn công ty')).toBeInTheDocument();
+    expect(screen.getAllByText('Toàn bộ nhân viên').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Báo cáo tuần kỹ thuật')).not.toBeInTheDocument();
+  });
+
+  it('xóa toàn bộ bộ lọc tài liệu', async () => {
+    mocks.listDocuments.mockResolvedValue([readyDocument, scanningDocument]);
+    renderApp();
+
+    await screen.findByText('Báo cáo tuần kỹ thuật');
+
+    fireEvent.change(screen.getByLabelText('Trạng thái'), {
+      target: { value: 'PROCESSING' },
+    });
+    expect(screen.queryByText('Báo cáo tuần kỹ thuật')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Xóa lọc' }));
+
+    expect(screen.getByText('Báo cáo tuần kỹ thuật')).toBeInTheDocument();
+    expect(screen.getByText('Quy trình toàn công ty')).toBeInTheDocument();
+  });
+
+  it('sắp xếp tài liệu theo tên A-Z', async () => {
+    mocks.listDocuments.mockResolvedValue([
+      makeDocument(1, { title: 'Gamma' }),
+      makeDocument(2, { title: 'Alpha' }),
+      makeDocument(3, { title: 'Beta' }),
+    ]);
+    renderApp();
+
+    await screen.findByText('Gamma');
+    fireEvent.change(screen.getByLabelText('Sắp xếp'), {
+      target: { value: 'TITLE_ASC' },
+    });
+
+    const alpha = screen.getByText('Alpha');
+    const beta = screen.getByText('Beta');
+    const gamma = screen.getByText('Gamma');
+    expect(alpha.compareDocumentPosition(beta)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(beta.compareDocumentPosition(gamma)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  it('sắp xếp tài liệu theo thời gian cũ nhất', async () => {
+    mocks.listDocuments.mockResolvedValue([
+      makeDocument(1, { title: 'Mới', updatedAt: '2026-06-24T06:00:00.000Z' }),
+      makeDocument(2, { title: 'Cũ', updatedAt: '2026-06-01T06:00:00.000Z' }),
+    ]);
+    renderApp();
+
+    await screen.findByText('Mới');
+    fireEvent.change(screen.getByLabelText('Sắp xếp'), {
+      target: { value: 'UPDATED_ASC' },
+    });
+
+    const oldDocument = screen.getByText('Cũ');
+    const newDocument = screen.getByText('Mới');
+    expect(oldDocument.compareDocumentPosition(newDocument)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  it('phân trang tài liệu sang trang sau', async () => {
+    mocks.listDocuments.mockResolvedValue(Array.from({ length: 12 }, (_, index) => makeDocument(index + 1)));
+    renderApp();
+
+    expect(await screen.findByText('Tài liệu 12')).toBeInTheDocument();
+    expect(screen.queryByText('Tài liệu 02')).not.toBeInTheDocument();
+    expect(screen.getByText('Đang xem 1-10 trong 12 tài liệu')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Trước' })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sau' }));
+
+    expect(screen.getByText('Tài liệu 02')).toBeInTheDocument();
+    expect(screen.getByText('Tài liệu 01')).toBeInTheDocument();
+    expect(screen.queryByText('Tài liệu 12')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sau' })).toBeDisabled();
+  });
+
+  it('quay về trang 1 khi đổi bộ lọc tài liệu', async () => {
+    mocks.listDocuments.mockResolvedValue([
+      ...Array.from({ length: 10 }, (_, index) => makeDocument(index + 1)),
+      makeDocument(11, {
+        title: 'File đang quét',
+        status: 'SCANNING',
+        updatedAt: '2026-05-01T06:00:00.000Z',
+      }),
+      makeDocument(12, { updatedAt: '2026-04-01T06:00:00.000Z' }),
+    ]);
+    renderApp();
+
+    await screen.findByText('Tài liệu 10');
+    fireEvent.click(screen.getByRole('button', { name: 'Sau' }));
+    expect(screen.getByText('File đang quét')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Trạng thái'), {
+      target: { value: 'PROCESSING' },
+    });
+
+    expect(screen.getByText('File đang quét')).toBeInTheDocument();
+    expect(screen.getByText('Trang 1 / 1')).toBeInTheDocument();
   });
 
   it('mở form tạo yêu cầu tải lên', () => {
@@ -146,7 +325,7 @@ describe('App', () => {
 
     expect(screen.getByRole('heading', { name: 'Tạo yêu cầu tải lên' })).toBeInTheDocument();
     expect(screen.getByLabelText('Tiêu đề')).toBeInTheDocument();
-    expect(screen.getByLabelText('Phân loại')).toBeInTheDocument();
+    expect(screen.getAllByLabelText('Phân loại').length).toBeGreaterThan(0);
     expect(screen.getByLabelText('File')).toBeInTheDocument();
   });
 

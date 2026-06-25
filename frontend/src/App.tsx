@@ -46,6 +46,10 @@ import {
 
 type Classification = 'Công khai' | 'Nội bộ' | 'Mật' | 'Hạn chế';
 type ShareRequestFilter = 'ALL' | 'CONFIDENTIAL' | 'RESTRICTED';
+type DocumentStatusFilter = 'ALL' | 'PROCESSING' | 'READY' | 'BLOCKED';
+type DocumentClassificationFilter = 'ALL' | DocumentClassification;
+type DocumentAccessScopeFilter = 'ALL' | DocumentAccessScope;
+type DocumentSort = 'UPDATED_DESC' | 'UPDATED_ASC' | 'TITLE_ASC' | 'TITLE_DESC';
 
 interface DocumentItem {
   id: string;
@@ -56,6 +60,7 @@ interface DocumentItem {
   version: number;
   size: string;
   updated: string;
+  updatedAt: string;
   classification: Classification;
   accessScope: DocumentAccessScope;
   status: DocumentStatus;
@@ -71,7 +76,7 @@ export const classificationLabels: Record<DocumentSummary['classification'], Cla
 
 export const accessScopeLabels: Record<DocumentAccessScope, string> = {
   DEPARTMENT: 'Phòng ban',
-  ALL_EMPLOYEES: 'Toàn công ty',
+  ALL_EMPLOYEES: 'Toàn bộ nhân viên',
 };
 
 export const statusLabels: Record<DocumentStatus, string> = {
@@ -120,6 +125,7 @@ function toDocumentItem(document: DocumentSummary): DocumentItem {
     version: document.currentVersion,
     size: formatSize(document.sizeBytes),
     updated: formatUpdatedAt(document.updatedAt),
+    updatedAt: document.updatedAt,
     classification: classificationLabels[document.classification],
     accessScope: document.accessScope,
     status: document.status,
@@ -162,6 +168,48 @@ const shareRequestFilters: Array<{ value: ShareRequestFilter; label: string }> =
   { value: 'CONFIDENTIAL', label: 'Mật' },
   { value: 'RESTRICTED', label: 'Hạn chế' },
 ];
+
+const documentStatusFilters: Array<{ value: DocumentStatusFilter; label: string }> = [
+  { value: 'ALL', label: 'Tất cả trạng thái' },
+  { value: 'PROCESSING', label: 'Đang xử lý' },
+  { value: 'READY', label: 'Sẵn sàng' },
+  { value: 'BLOCKED', label: 'Bị từ chối/lỗi' },
+];
+
+const documentClassificationFilters: Array<{
+  value: DocumentClassificationFilter;
+  label: string;
+}> = [
+  { value: 'ALL', label: 'Tất cả phân loại' },
+  { value: 'PUBLIC', label: 'Công khai' },
+  { value: 'INTERNAL', label: 'Nội bộ' },
+  { value: 'CONFIDENTIAL', label: 'Mật' },
+  { value: 'RESTRICTED', label: 'Hạn chế' },
+];
+
+const documentAccessScopeFilters: Array<{ value: DocumentAccessScopeFilter; label: string }> = [
+  { value: 'ALL', label: 'Tất cả phạm vi' },
+  { value: 'DEPARTMENT', label: 'Phòng ban' },
+  { value: 'ALL_EMPLOYEES', label: 'Toàn bộ nhân viên' },
+];
+
+const documentSortOptions: Array<{ value: DocumentSort; label: string }> = [
+  { value: 'UPDATED_DESC', label: 'Mới cập nhật nhất' },
+  { value: 'UPDATED_ASC', label: 'Cũ nhất' },
+  { value: 'TITLE_ASC', label: 'Tên A-Z' },
+  { value: 'TITLE_DESC', label: 'Tên Z-A' },
+];
+
+const documentPageSizeOptions = [10, 20, 50] as const;
+
+const processingStatuses = new Set<DocumentStatus>([
+  'UPLOAD_PENDING',
+  'UPLOADED',
+  'VALIDATING',
+  'SCANNING',
+]);
+
+const blockedStatuses = new Set<DocumentStatus>(['REJECTED', 'INFECTED', 'FAILED']);
 
 function inferContentType(file: File): string {
   if (file.type) return file.type;
@@ -288,6 +336,13 @@ export function App() {
   const { currentUser, logout } = useAuth();
   const navigate = useNavigate();
   const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<DocumentStatusFilter>('ALL');
+  const [classificationFilter, setClassificationFilter] =
+    useState<DocumentClassificationFilter>('ALL');
+  const [accessScopeFilter, setAccessScopeFilter] = useState<DocumentAccessScopeFilter>('ALL');
+  const [documentSort, setDocumentSort] = useState<DocumentSort>('UPDATED_DESC');
+  const [pageSize, setPageSize] = useState<(typeof documentPageSizeOptions)[number]>(10);
+  const [currentPage, setCurrentPage] = useState(1);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploadTitle, setUploadTitle] = useState('');
@@ -380,14 +435,73 @@ export function App() {
 
   const filteredDocuments = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase('vi');
-    if (!normalized) return documents;
     return documents.filter((document) =>
-      [document.title, document.department, document.owner, document.type]
-        .join(' ')
-        .toLocaleLowerCase('vi')
-        .includes(normalized),
+      (!normalized ||
+        [
+          document.title,
+          document.department,
+          document.owner,
+          document.type,
+          document.classification,
+          accessScopeLabels[document.accessScope],
+          statusLabels[document.status],
+          document.statusReason ?? '',
+        ]
+          .join(' ')
+          .toLocaleLowerCase('vi')
+          .includes(normalized)) &&
+      (statusFilter === 'ALL' ||
+        (statusFilter === 'PROCESSING' && processingStatuses.has(document.status)) ||
+        (statusFilter === 'READY' && document.status === 'READY') ||
+        (statusFilter === 'BLOCKED' && blockedStatuses.has(document.status))) &&
+      (classificationFilter === 'ALL' ||
+        classificationLabels[classificationFilter] === document.classification) &&
+      (accessScopeFilter === 'ALL' || accessScopeFilter === document.accessScope),
     );
-  }, [documents, query]);
+  }, [accessScopeFilter, classificationFilter, documents, query, statusFilter]);
+
+  const sortedDocuments = useMemo(() => {
+    return [...filteredDocuments].sort((left, right) => {
+      if (documentSort === 'TITLE_ASC' || documentSort === 'TITLE_DESC') {
+        const comparison = left.title.localeCompare(right.title, 'vi', { sensitivity: 'base' });
+        return documentSort === 'TITLE_ASC' ? comparison : -comparison;
+      }
+
+      const leftTime = new Date(left.updatedAt).getTime();
+      const rightTime = new Date(right.updatedAt).getTime();
+      const normalizedLeftTime = Number.isNaN(leftTime) ? 0 : leftTime;
+      const normalizedRightTime = Number.isNaN(rightTime) ? 0 : rightTime;
+      const comparison = normalizedLeftTime - normalizedRightTime;
+      return documentSort === 'UPDATED_ASC' ? comparison : -comparison;
+    });
+  }, [documentSort, filteredDocuments]);
+
+  const totalPages = Math.max(1, Math.ceil(sortedDocuments.length / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const pageStartIndex = sortedDocuments.length === 0 ? 0 : (safeCurrentPage - 1) * pageSize;
+  const pageEndIndex = Math.min(pageStartIndex + pageSize, sortedDocuments.length);
+  const paginatedDocuments = sortedDocuments.slice(pageStartIndex, pageEndIndex);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [accessScopeFilter, classificationFilter, documentSort, pageSize, query, statusFilter]);
+
+  useEffect(() => {
+    setCurrentPage((page) => Math.min(page, totalPages));
+  }, [totalPages]);
+
+  const filtersActive =
+    query.trim().length > 0 ||
+    statusFilter !== 'ALL' ||
+    classificationFilter !== 'ALL' ||
+    accessScopeFilter !== 'ALL';
+
+  function resetDocumentFilters(): void {
+    setQuery('');
+    setStatusFilter('ALL');
+    setClassificationFilter('ALL');
+    setAccessScopeFilter('ALL');
+  }
 
   async function handleUploadSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -688,12 +802,96 @@ export function App() {
                   <h2 id="recent-heading">Tài liệu gần đây</h2>
                 </div>
                 <div className="panel-tools">
-                  <button className="quiet-button">
+                  <button className="quiet-button" type="button">
                     <SlidersHorizontal size={16} />
                     Lọc
                   </button>
-                  <button className="quiet-button">Xem tất cả</button>
+                  <button className="quiet-button" type="button" onClick={resetDocumentFilters}>
+                    Xem tất cả
+                  </button>
                 </div>
+              </div>
+
+              <div className="document-filters" aria-label="Bộ lọc tài liệu">
+                <label>
+                  <span>Trạng thái</span>
+                  <select
+                    value={statusFilter}
+                    onChange={(event) => setStatusFilter(event.target.value as DocumentStatusFilter)}
+                  >
+                    {documentStatusFilters.map((filter) => (
+                      <option key={filter.value} value={filter.value}>
+                        {filter.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>Phân loại</span>
+                  <select
+                    value={classificationFilter}
+                    onChange={(event) =>
+                      setClassificationFilter(event.target.value as DocumentClassificationFilter)
+                    }
+                  >
+                    {documentClassificationFilters.map((filter) => (
+                      <option key={filter.value} value={filter.value}>
+                        {filter.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>Phạm vi</span>
+                  <select
+                    value={accessScopeFilter}
+                    onChange={(event) =>
+                      setAccessScopeFilter(event.target.value as DocumentAccessScopeFilter)
+                    }
+                  >
+                    {documentAccessScopeFilters.map((filter) => (
+                      <option key={filter.value} value={filter.value}>
+                        {filter.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>Sắp xếp</span>
+                  <select
+                    value={documentSort}
+                    onChange={(event) => setDocumentSort(event.target.value as DocumentSort)}
+                  >
+                    {documentSortOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>Số dòng</span>
+                  <select
+                    value={pageSize}
+                    onChange={(event) =>
+                      setPageSize(Number(event.target.value) as typeof pageSize)
+                    }
+                  >
+                    {documentPageSizeOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option} tài liệu
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  className="quiet-button"
+                  type="button"
+                  onClick={resetDocumentFilters}
+                  disabled={!filtersActive}
+                >
+                  Xóa lọc
+                </button>
               </div>
 
               <div className="document-header" aria-hidden="true">
@@ -723,7 +921,7 @@ export function App() {
                   </div>
                 )}
 
-                {filteredDocuments.map((document) => (
+                {paginatedDocuments.map((document) => (
                   <article className="document-row" key={document.id}>
                     <div className="document-identity">
                       <FileTypeMark type={document.type} />
@@ -797,15 +995,46 @@ export function App() {
                   <div className="empty-state">
                     <Archive size={28} />
                     <h3>
-                      {documents.length === 0 ? 'Chưa có tài liệu' : 'Không tìm thấy tài liệu'}
+                      {documents.length === 0
+                        ? 'Chưa có tài liệu'
+                        : 'Không tìm thấy tài liệu phù hợp'}
                     </h3>
                     <p>
                       {documents.length === 0
                         ? 'Tài liệu tải lên sẽ xuất hiện tại đây.'
-                        : 'Thử tên ngắn hơn hoặc tìm theo phòng ban và người cập nhật.'}
+                        : 'Thử xóa bớt bộ lọc hoặc tìm theo tên, phòng ban và người cập nhật.'}
                     </p>
                   </div>
                 )}
+              </div>
+
+              <div className="document-pagination" aria-label="Phân trang tài liệu">
+                <p>
+                  {sortedDocuments.length === 0
+                    ? 'Không có tài liệu để hiển thị'
+                    : `Đang xem ${pageStartIndex + 1}-${pageEndIndex} trong ${sortedDocuments.length} tài liệu`}
+                </p>
+                <div>
+                  <button
+                    className="quiet-button"
+                    type="button"
+                    disabled={safeCurrentPage <= 1}
+                    onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                  >
+                    Trước
+                  </button>
+                  <span>
+                    Trang {safeCurrentPage} / {totalPages}
+                  </span>
+                  <button
+                    className="quiet-button"
+                    type="button"
+                    disabled={safeCurrentPage >= totalPages}
+                    onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                  >
+                    Sau
+                  </button>
+                </div>
               </div>
             </section>
 
