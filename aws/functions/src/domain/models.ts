@@ -88,6 +88,23 @@ export interface DownloadIntent {
   fileName: string;
 }
 
+export interface DocumentAuditEvent {
+  eventId: string;
+  action: AuditAction;
+  actorType: AuditActorType;
+  actorId: string;
+  source: AuditSource;
+  outcome: AuditOutcome;
+  occurredAt: string;
+  versionNumber: number;
+  reason?: string;
+  details?: Record<string, string | number | boolean>;
+}
+
+export interface ListDocumentAuditEventsResponse {
+  items: DocumentAuditEvent[];
+}
+
 export interface DocumentPrincipal {
   userId: string;
   departmentId: string;

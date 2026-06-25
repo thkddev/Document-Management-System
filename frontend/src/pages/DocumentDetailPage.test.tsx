@@ -5,6 +5,7 @@ import { DocumentDetailPage } from './DocumentDetailPage';
 
 const mocks = vi.hoisted(() => ({
   getDocumentDetail: vi.fn(),
+  listDocumentAuditEvents: vi.fn(),
   listDepartmentShares: vi.fn(),
   revokeDepartmentShare: vi.fn(),
   createDownloadIntent: vi.fn(),
@@ -28,6 +29,7 @@ vi.mock('../features/auth/AuthContext', () => ({
 vi.mock('../lib/documents', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getDocumentDetail: mocks.getDocumentDetail,
+  listDocumentAuditEvents: mocks.listDocumentAuditEvents,
   listDepartmentShares: mocks.listDepartmentShares,
   revokeDepartmentShare: mocks.revokeDepartmentShare,
   createDownloadIntent: mocks.createDownloadIntent,
@@ -71,11 +73,34 @@ describe('DocumentDetailPage', () => {
       roles: ['SYSTEM_ADMIN'],
     };
     mocks.getDocumentDetail.mockReset();
+    mocks.listDocumentAuditEvents.mockReset();
     mocks.listDepartmentShares.mockReset();
     mocks.revokeDepartmentShare.mockReset();
     mocks.createDownloadIntent.mockReset();
     mocks.triggerBrowserDownload.mockReset();
     mocks.getDocumentDetail.mockResolvedValue(detail);
+    mocks.listDocumentAuditEvents.mockResolvedValue([
+      {
+        eventId: 'event-1',
+        action: 'DOCUMENT_READY',
+        actorType: 'SYSTEM',
+        actorId: 'upload-processor',
+        source: 'UPLOAD_PROCESSOR',
+        outcome: 'SUCCESS',
+        occurredAt: '2026-06-20T06:30:28.640Z',
+        versionNumber: 1,
+      },
+      {
+        eventId: 'event-2',
+        action: 'DOCUMENT_DOWNLOAD_REQUESTED',
+        actorType: 'USER',
+        actorId: 'user@example.com',
+        source: 'API',
+        outcome: 'SUCCESS',
+        occurredAt: '2026-06-20T06:35:28.640Z',
+        versionNumber: 1,
+      },
+    ]);
     mocks.listDepartmentShares.mockResolvedValue([]);
     mocks.revokeDepartmentShare.mockResolvedValue({
       documentId: 'document-1',

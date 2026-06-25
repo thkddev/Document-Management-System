@@ -456,4 +456,72 @@ describe('App', () => {
     );
     expect(await screen.findByText('Đã từ chối yêu cầu chia sẻ.')).toBeInTheDocument();
   });
+
+  it('mở panel thông báo từ biểu tượng chuông', async () => {
+    renderApp();
+
+    await screen.findByText('Báo cáo tuần kỹ thuật');
+    fireEvent.click(screen.getByRole('button', { name: 'Thông báo (1)' }));
+
+    expect(screen.getByRole('dialog', { name: 'Thông báo' })).toBeInTheDocument();
+    expect(screen.getByText('Tài liệu đã sẵn sàng')).toBeInTheDocument();
+  });
+
+  it('hiển thị thông báo yêu cầu chia sẻ cho Department Admin', async () => {
+    mocks.currentUser = {
+      ...mocks.currentUser,
+      roles: ['DEPARTMENT_ADMIN'],
+    };
+    mocks.listPendingShareRequests.mockResolvedValue(pendingShareRequests);
+
+    renderApp();
+
+    await screen.findByText('Bảng lương kỹ thuật');
+    fireEvent.click(await screen.findByRole('button', { name: 'Thông báo (3)' }));
+
+    expect(screen.getByRole('dialog', { name: 'Thông báo' })).toBeInTheDocument();
+    expect(screen.getAllByText('Yêu cầu chia sẻ chờ duyệt').length).toBeGreaterThan(0);
+    expect(screen.getByText(/từ TECH đến HR/)).toBeInTheDocument();
+  });
+
+  it('đánh dấu thông báo đã xem khi bấm vào', async () => {
+    renderApp();
+
+    await screen.findByText('Báo cáo tuần kỹ thuật');
+    fireEvent.click(screen.getByRole('button', { name: 'Thông báo (1)' }));
+
+    const notification = screen.getByRole('button', { name: /Tài liệu đã sẵn sàng/ });
+    fireEvent.click(notification);
+
+    expect(window.localStorage.getItem('dms:seen-notifications')).toContain(
+      'document-document-1-READY',
+    );
+    expect(screen.queryByRole('button', { name: 'Thông báo (1)' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Thông báo' }));
+    expect(screen.getByRole('button', { name: /Tài liệu đã sẵn sàng/ })).toHaveClass('is-seen');
+  });
+
+  it('không xóa thông báo đã xem trong lúc danh sách tài liệu đang tải', async () => {
+    window.localStorage.setItem('dms:seen-notifications', JSON.stringify(['document-document-1-READY']));
+    let resolveDocuments: (items: typeof readyDocument[]) => void = () => undefined;
+    mocks.listDocuments.mockReturnValue(
+      new Promise((resolve) => {
+        resolveDocuments = resolve;
+      }),
+    );
+
+    renderApp();
+
+    expect(window.localStorage.getItem('dms:seen-notifications')).toContain(
+      'document-document-1-READY',
+    );
+
+    resolveDocuments([readyDocument]);
+    await screen.findByText('Báo cáo tuần kỹ thuật');
+
+    expect(screen.getByRole('button', { name: 'Thông báo' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Thông báo (1)' })).not.toBeInTheDocument();
+  });
+
 });

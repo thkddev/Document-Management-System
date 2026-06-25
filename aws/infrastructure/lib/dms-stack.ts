@@ -213,6 +213,26 @@ export class DmsStack extends cdk.Stack {
     });
     table.grantReadData(documentDetailFunction);
 
+    const documentAuditEventsFunction = new lambda.Function(this, 'DocumentAuditEventsFunction', {
+      code: lambda.Code.fromAsset(path.join(currentDirectory, '../../functions/dist')),
+      handler: 'handlers/document-audit-events.handler',
+      runtime: lambda.Runtime.NODEJS_22_X,
+      architecture: lambda.Architecture.ARM_64,
+      memorySize: 256,
+      timeout: cdk.Duration.seconds(10),
+      tracing: lambda.Tracing.ACTIVE,
+      logGroup: new logs.LogGroup(this, 'DocumentAuditEventsFunctionLogs', {
+        retention: isProduction ? logs.RetentionDays.THREE_MONTHS : logs.RetentionDays.TWO_WEEKS,
+        removalPolicy,
+      }),
+      environment: {
+        TABLE_NAME: table.tableName,
+        ENVIRONMENT_NAME: props.environmentName,
+        CORS_ALLOW_ORIGIN: corsAllowOrigin,
+      },
+    });
+    table.grantReadData(documentAuditEventsFunction);
+
     const downloadIntentFunction = new lambda.Function(this, 'DownloadIntentFunction', {
       code: lambda.Code.fromAsset(path.join(currentDirectory, '../../functions/dist')),
       handler: 'handlers/download-intents.handler',
@@ -548,6 +568,12 @@ export class DmsStack extends cdk.Stack {
       authorizer,
       authorizationType: apigateway.AuthorizationType.COGNITO,
     });
+    documentResource
+      .addResource('audit-events')
+      .addMethod('GET', new apigateway.LambdaIntegration(documentAuditEventsFunction), {
+        authorizer,
+        authorizationType: apigateway.AuthorizationType.COGNITO,
+      });
     documentResource
       .addResource('download-intents')
       .addMethod('POST', new apigateway.LambdaIntegration(downloadIntentFunction), {

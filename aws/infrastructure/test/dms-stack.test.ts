@@ -121,6 +121,13 @@ describe('DmsStack', () => {
       },
     });
     template.hasResourceProperties('AWS::Lambda::Function', {
+      Handler: 'handlers/document-audit-events.handler',
+      Runtime: 'nodejs22.x',
+      Environment: {
+        Variables: Match.objectLike({ TABLE_NAME: Match.anyValue() }),
+      },
+    });
+    template.hasResourceProperties('AWS::Lambda::Function', {
       Handler: 'handlers/download-intents.handler',
       Runtime: 'nodejs22.x',
       Environment: {

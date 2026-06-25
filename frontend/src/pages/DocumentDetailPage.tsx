@@ -31,12 +31,48 @@ import {
   createDepartmentShare,
   createDownloadIntent,
   getDocumentDetail,
+  listDocumentAuditEvents,
   listDepartmentShares,
   revokeDepartmentShare,
   triggerBrowserDownload,
+  type AuditAction,
   type DepartmentShareSummary,
+  type DocumentAuditEvent,
   type DocumentDetail,
 } from '../lib/documents';
+
+const auditActionLabels: Record<AuditAction, string> = {
+  UPLOAD_INTENT_CREATED: 'Tạo yêu cầu tải lên',
+  UPLOAD_VALIDATED: 'Xác minh upload',
+  MALWARE_SCAN_STARTED: 'Bắt đầu quét an toàn',
+  DOCUMENT_READY: 'Tài liệu sẵn sàng',
+  DOCUMENT_REJECTED: 'Từ chối tài liệu',
+  MALWARE_DETECTED: 'Phát hiện mã độc',
+  PROCESSING_FAILED: 'Xử lý thất bại',
+  MESSAGE_DEAD_LETTERED: 'Chuyển vào hàng đợi lỗi',
+  DOCUMENT_DOWNLOAD_REQUESTED: 'Tạo liên kết tải xuống',
+  DOCUMENT_SHARE_REQUESTED: 'Yêu cầu chia sẻ',
+  DOCUMENT_SHARE_GRANTED: 'Cấp quyền chia sẻ',
+  DOCUMENT_SHARE_APPROVED: 'Duyệt chia sẻ',
+  DOCUMENT_SHARE_REJECTED: 'Từ chối chia sẻ',
+  DOCUMENT_SHARE_REVOKED: 'Thu hồi chia sẻ',
+};
+
+function auditActorLabel(event: DocumentAuditEvent): string {
+  if (event.actorType === 'SYSTEM') return 'Hệ thống';
+  return event.actorId.includes('@') ? event.actorId : `Người dùng ${event.actorId}`;
+}
+
+function auditDetailLabel(event: DocumentAuditEvent): string {
+  if (event.reason) return event.reason;
+  if (event.details?.targetDepartmentId) {
+    return `Phòng ban đích: ${event.details.targetDepartmentId}`;
+  }
+  if (event.details?.mode) {
+    return `Chế độ: ${event.details.mode}`;
+  }
+  return `Phiên bản v${event.versionNumber}`;
+}
 
 export function DocumentDetailPage() {
   const { documentId = '' } = useParams();
@@ -58,6 +94,9 @@ export function DocumentDetailPage() {
   const [sharesMessage, setSharesMessage] = useState('');
   const [revokeTargetDepartmentId, setRevokeTargetDepartmentId] = useState('');
   const [revokingDepartmentId, setRevokingDepartmentId] = useState<string | null>(null);
+  const [auditEvents, setAuditEvents] = useState<DocumentAuditEvent[]>([]);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditError, setAuditError] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -153,6 +192,38 @@ export function DocumentDetailPage() {
     }
     void refreshDepartmentShares(document.documentId);
   }, [canManageDepartmentShares, document]);
+
+  useEffect(() => {
+    if (!document) {
+      setAuditEvents([]);
+      setAuditError('');
+      return;
+    }
+    let active = true;
+    setAuditLoading(true);
+    setAuditError('');
+    void listDocumentAuditEvents(document.documentId)
+      .then((items) => {
+        if (active) setAuditEvents(items);
+      })
+      .catch((err: unknown) => {
+        if (!active) return;
+        setAuditEvents([]);
+        setAuditError(
+          err instanceof ApiRequestError && err.status === 404
+            ? 'Bạn không có quyền xem lịch sử hoạt động của tài liệu này.'
+            : err instanceof Error
+              ? err.message
+              : 'Không thể tải lịch sử hoạt động. Vui lòng thử lại.',
+        );
+      })
+      .finally(() => {
+        if (active) setAuditLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [document]);
 
   async function handleDepartmentShare(): Promise<void> {
     if (!document || !targetDepartmentId) return;
@@ -535,6 +606,42 @@ export function DocumentDetailPage() {
                   )}
                 </section>
               )}
+
+              <section className="detail-section audit-section" aria-labelledby="audit-heading">
+                <div className="detail-section-heading">
+                  <p className="section-kicker">Nhật ký</p>
+                  <h2 id="audit-heading">Lịch sử hoạt động</h2>
+                </div>
+
+                {auditLoading && (
+                  <p className="share-hint" aria-live="polite">
+                    Đang tải lịch sử hoạt động.
+                  </p>
+                )}
+                {auditError && (
+                  <p className="document-load-error detail-download-error" role="alert">
+                    {auditError}
+                  </p>
+                )}
+                {!auditLoading && !auditError && auditEvents.length === 0 && (
+                  <p className="share-hint">Chưa có hoạt động nào cho tài liệu này.</p>
+                )}
+                {auditEvents.length > 0 && (
+                  <ol className="audit-timeline">
+                    {auditEvents.map((event) => (
+                      <li key={event.eventId}>
+                        <div>
+                          <strong>{auditActionLabels[event.action]}</strong>
+                          <span>{auditDetailLabel(event)}</span>
+                        </div>
+                        <small>
+                          {formatUpdatedAt(event.occurredAt)} · {auditActorLabel(event)}
+                        </small>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </section>
             </>
           )}
         </section>

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { flushSync } from 'react-dom';
 import {
   Archive,
   Bell,
@@ -50,6 +51,16 @@ type DocumentStatusFilter = 'ALL' | 'PROCESSING' | 'READY' | 'BLOCKED';
 type DocumentClassificationFilter = 'ALL' | DocumentClassification;
 type DocumentAccessScopeFilter = 'ALL' | DocumentAccessScope;
 type DocumentSort = 'UPDATED_DESC' | 'UPDATED_ASC' | 'TITLE_ASC' | 'TITLE_DESC';
+type NotificationTone = 'INFO' | 'SUCCESS' | 'WARNING' | 'DANGER';
+
+interface AppNotification {
+  id: string;
+  title: string;
+  description: string;
+  meta: string;
+  tone: NotificationTone;
+  target: { type: 'DOCUMENT'; documentId: string } | { type: 'SHARE_REVIEW' };
+}
 
 interface DocumentItem {
   id: string;
@@ -201,6 +212,7 @@ const documentSortOptions: Array<{ value: DocumentSort; label: string }> = [
 ];
 
 const documentPageSizeOptions = [10, 20, 50] as const;
+const seenNotificationsStorageKey = 'dms:seen-notifications';
 
 const processingStatuses = new Set<DocumentStatus>([
   'UPLOAD_PENDING',
@@ -210,6 +222,43 @@ const processingStatuses = new Set<DocumentStatus>([
 ]);
 
 const blockedStatuses = new Set<DocumentStatus>(['REJECTED', 'INFECTED', 'FAILED']);
+
+function notificationToneForStatus(status: DocumentStatus): NotificationTone {
+  if (status === 'READY') return 'SUCCESS';
+  if (blockedStatuses.has(status)) return 'DANGER';
+  return 'INFO';
+}
+
+function notificationDescriptionForDocument(document: DocumentSummary): string {
+  if (document.status === 'READY') {
+    return 'Tài liệu đã sẵn sàng để xem và tải xuống.';
+  }
+  if (document.statusReason) return document.statusReason;
+  if (blockedStatuses.has(document.status)) {
+    return 'Tài liệu cần được kiểm tra lại trước khi sử dụng.';
+  }
+  return 'Hệ thống đang xử lý và sẽ tự động cập nhật trạng thái.';
+}
+
+function readSeenNotificationIds(): ReadonlySet<string> {
+  if (typeof window === 'undefined') return new Set();
+  try {
+    const rawValue = window.localStorage.getItem(seenNotificationsStorageKey);
+    const parsed = rawValue ? (JSON.parse(rawValue) as unknown) : [];
+    return new Set(Array.isArray(parsed) ? parsed.filter((item) => typeof item === 'string') : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function persistSeenNotificationIds(ids: ReadonlySet<string>): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(seenNotificationsStorageKey, JSON.stringify([...ids]));
+  } catch {
+    // Local notification state is non-critical.
+  }
+}
 
 function inferContentType(file: File): string {
   if (file.type) return file.type;
@@ -367,6 +416,10 @@ export function App() {
     useState<DepartmentShareRequestSummary | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
   const [rejectionError, setRejectionError] = useState('');
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [seenNotificationIds, setSeenNotificationIds] =
+    useState<ReadonlySet<string>>(readSeenNotificationIds);
+  const shareReviewPanelRef = useRef<HTMLElement | null>(null);
 
   // currentUser luôn có giá trị khi App được render (ProtectedRoute đảm bảo điều này)
   const displayName = currentUser?.displayName ?? '';
@@ -481,6 +534,57 @@ export function App() {
   const pageStartIndex = sortedDocuments.length === 0 ? 0 : (safeCurrentPage - 1) * pageSize;
   const pageEndIndex = Math.min(pageStartIndex + pageSize, sortedDocuments.length);
   const paginatedDocuments = sortedDocuments.slice(pageStartIndex, pageEndIndex);
+  const notifications = useMemo<AppNotification[]>(() => {
+    const shareNotifications: AppNotification[] = canReviewShareRequests
+      ? shareRequests.slice(0, 5).map((request) => ({
+          id: `share-${request.shareRequestId}`,
+          title: 'Yêu cầu chia sẻ chờ duyệt',
+          description: `${request.title} từ ${request.sourceDepartmentId} đến ${request.targetDepartmentId}`,
+          meta: formatUpdatedAt(request.createdAt),
+          tone: 'WARNING',
+          target: { type: 'SHARE_REVIEW' },
+        }))
+      : [];
+
+    const documentNotifications: AppNotification[] = [...documentSummaries]
+      .filter(
+        (document) =>
+          document.status === 'READY' ||
+          processingStatuses.has(document.status) ||
+          blockedStatuses.has(document.status),
+      )
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+      .slice(0, 8)
+      .map((document) => ({
+        id: `document-${document.documentId}-${document.status}`,
+        title:
+          document.status === 'READY'
+            ? 'Tài liệu đã sẵn sàng'
+            : blockedStatuses.has(document.status)
+              ? 'Tài liệu cần chú ý'
+              : 'Tài liệu đang được xử lý',
+        description: `${document.title} · ${notificationDescriptionForDocument(document)}`,
+        meta: statusLabels[document.status],
+        tone: notificationToneForStatus(document.status),
+        target: { type: 'DOCUMENT', documentId: document.documentId },
+      }));
+
+    return [...shareNotifications, ...documentNotifications].slice(0, 10);
+  }, [canReviewShareRequests, documentSummaries, shareRequests]);
+  const unseenNotificationCount = notifications.filter(
+    (notification) => !seenNotificationIds.has(notification.id),
+  ).length;
+
+  useEffect(() => {
+    if (documentsLoading || notifications.length === 0) return;
+    const activeIds = new Set(notifications.map((notification) => notification.id));
+    setSeenNotificationIds((current) => {
+      const next = new Set([...current].filter((id) => activeIds.has(id)));
+      if (next.size === current.size) return current;
+      persistSeenNotificationIds(next);
+      return next;
+    });
+  }, [documentsLoading, notifications]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -501,6 +605,23 @@ export function App() {
     setStatusFilter('ALL');
     setClassificationFilter('ALL');
     setAccessScopeFilter('ALL');
+  }
+
+  function handleNotificationClick(notification: AppNotification): void {
+    const nextSeenNotificationIds = new Set(seenNotificationIds);
+    nextSeenNotificationIds.add(notification.id);
+    persistSeenNotificationIds(nextSeenNotificationIds);
+
+    flushSync(() => {
+      setSeenNotificationIds(nextSeenNotificationIds);
+      setNotificationsOpen(false);
+    });
+
+    if (notification.target.type === 'DOCUMENT') {
+      navigate(`/documents/${notification.target.documentId}`);
+      return;
+    }
+    shareReviewPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   async function handleUploadSubmit(event: FormEvent<HTMLFormElement>) {
@@ -673,10 +794,63 @@ export function App() {
             />
             <kbd>⌘ K</kbd>
           </label>
-          <button className="icon-button notification-button" aria-label="Thông báo">
-            <Bell size={19} />
-            <span className="notification-dot" />
-          </button>
+          <div className="notification-menu">
+            <button
+              className="icon-button notification-button"
+              aria-label={`Thông báo${unseenNotificationCount > 0 ? ` (${unseenNotificationCount})` : ''}`}
+              aria-expanded={notificationsOpen}
+              onClick={() => setNotificationsOpen((open) => !open)}
+            >
+              <Bell size={19} />
+              {unseenNotificationCount > 0 && (
+                <span className="notification-badge">{unseenNotificationCount}</span>
+              )}
+            </button>
+            {notificationsOpen && (
+              <div className="notification-panel" role="dialog" aria-label="Thông báo">
+                <div className="notification-panel-heading">
+                  <div>
+                    <p className="section-kicker">Trung tâm</p>
+                    <h2>Thông báo</h2>
+                  </div>
+                  <button
+                    className="icon-button"
+                    aria-label="Đóng thông báo"
+                    onClick={() => setNotificationsOpen(false)}
+                  >
+                    <X size={17} />
+                  </button>
+                </div>
+
+                {notifications.length === 0 ? (
+                  <div className="notification-empty">
+                    <ShieldCheck size={22} />
+                    <strong>Không có việc cần chú ý</strong>
+                    <p>Các tài liệu và yêu cầu chia sẻ hiện ổn định.</p>
+                  </div>
+                ) : (
+                  <ul className="notification-list">
+                    {notifications.map((notification) => (
+                      <li key={notification.id}>
+                        <button
+                          className={`notification-item notification-item--${notification.tone.toLowerCase()}${
+                            seenNotificationIds.has(notification.id) ? ' is-seen' : ''
+                          }`}
+                          onClick={() => handleNotificationClick(notification)}
+                        >
+                          <span>
+                            <strong>{notification.title}</strong>
+                            <small>{notification.description}</small>
+                          </span>
+                          <em>{notification.meta}</em>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </div>
           <button className="account-button" onClick={logout} title="Đăng xuất">
             <CircleUserRound size={20} />
             <span>{displayName || initials}</span>
@@ -1040,7 +1214,11 @@ export function App() {
 
             <aside className="activity-panel" aria-labelledby="activity-heading">
               {canReviewShareRequests && (
-                <section className="share-review-panel" aria-labelledby="share-review-heading">
+                <section
+                  ref={shareReviewPanelRef}
+                  className="share-review-panel"
+                  aria-labelledby="share-review-heading"
+                >
                   <div className="panel-heading panel-heading--compact">
                     <div>
                       <p className="section-kicker">Duyệt chia sẻ</p>

@@ -56,6 +56,29 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+  /documents/{documentId}/audit-events:
+    parameters:
+      - $ref: '#/components/parameters/DocumentId'
+    get:
+      operationId: listDocumentAuditEvents
+      summary: Liet ke lich su hoat dong cua tai lieu cho owner va quan tri vien duoc phep
+      responses:
+        '200':
+          description: Danh sach su kien audit cua tai lieu
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DocumentAuditEvent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /documents/{documentId}/download-intents:
     parameters:
       - $ref: '#/components/parameters/DocumentId'
@@ -364,6 +387,58 @@ components:
           format: date-time
         fileName:
           type: string
+    DocumentAuditEvent:
+      type: object
+      required: [eventId, action, actorType, actorId, source, outcome, occurredAt, versionNumber]
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        action:
+          type: string
+          enum:
+            [
+              UPLOAD_INTENT_CREATED,
+              UPLOAD_VALIDATED,
+              MALWARE_SCAN_STARTED,
+              DOCUMENT_READY,
+              DOCUMENT_REJECTED,
+              MALWARE_DETECTED,
+              PROCESSING_FAILED,
+              MESSAGE_DEAD_LETTERED,
+              DOCUMENT_DOWNLOAD_REQUESTED,
+              DOCUMENT_SHARE_REQUESTED,
+              DOCUMENT_SHARE_GRANTED,
+              DOCUMENT_SHARE_APPROVED,
+              DOCUMENT_SHARE_REJECTED,
+              DOCUMENT_SHARE_REVOKED,
+            ]
+        actorType:
+          type: string
+          enum: [USER, SYSTEM]
+        actorId:
+          type: string
+        source:
+          type: string
+          enum: [API, UPLOAD_PROCESSOR, DLQ_PROCESSOR]
+        outcome:
+          type: string
+          enum: [SUCCESS, REJECTED, FAILED]
+        occurredAt:
+          type: string
+          format: date-time
+        versionNumber:
+          type: integer
+          minimum: 1
+        reason:
+          type: string
+        details:
+          type: object
+          additionalProperties:
+            oneOf:
+              - type: string
+              - type: number
+              - type: boolean
     CreateDepartmentShareRequest:
       type: object
       required: [targetDepartmentId]

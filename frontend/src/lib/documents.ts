@@ -40,6 +40,39 @@ export interface DownloadIntent {
   fileName: string;
 }
 
+export type AuditAction =
+  | 'UPLOAD_INTENT_CREATED'
+  | 'UPLOAD_VALIDATED'
+  | 'MALWARE_SCAN_STARTED'
+  | 'DOCUMENT_READY'
+  | 'DOCUMENT_REJECTED'
+  | 'MALWARE_DETECTED'
+  | 'PROCESSING_FAILED'
+  | 'MESSAGE_DEAD_LETTERED'
+  | 'DOCUMENT_DOWNLOAD_REQUESTED'
+  | 'DOCUMENT_SHARE_REQUESTED'
+  | 'DOCUMENT_SHARE_GRANTED'
+  | 'DOCUMENT_SHARE_APPROVED'
+  | 'DOCUMENT_SHARE_REJECTED'
+  | 'DOCUMENT_SHARE_REVOKED';
+
+export type AuditActorType = 'USER' | 'SYSTEM';
+export type AuditSource = 'API' | 'UPLOAD_PROCESSOR' | 'DLQ_PROCESSOR';
+export type AuditOutcome = 'SUCCESS' | 'REJECTED' | 'FAILED';
+
+export interface DocumentAuditEvent {
+  eventId: string;
+  action: AuditAction;
+  actorType: AuditActorType;
+  actorId: string;
+  source: AuditSource;
+  outcome: AuditOutcome;
+  occurredAt: string;
+  versionNumber: number;
+  reason?: string;
+  details?: Record<string, string | number | boolean>;
+}
+
 export interface DepartmentShareResult {
   mode: 'GRANTED' | 'PENDING_APPROVAL';
   documentId: string;
@@ -80,6 +113,10 @@ interface ListDocumentsResponse {
   items: DocumentSummary[];
 }
 
+interface ListDocumentAuditEventsResponse {
+  items: DocumentAuditEvent[];
+}
+
 export const processingDocumentStatuses: ReadonlySet<DocumentStatus> = new Set([
   'UPLOAD_PENDING',
   'UPLOADED',
@@ -98,6 +135,13 @@ export async function listDocuments(): Promise<DocumentSummary[]> {
 
 export function getDocumentDetail(documentId: string): Promise<DocumentDetail> {
   return apiFetch<DocumentDetail>(`/documents/${encodeURIComponent(documentId)}`);
+}
+
+export async function listDocumentAuditEvents(documentId: string): Promise<DocumentAuditEvent[]> {
+  const response = await apiFetch<ListDocumentAuditEventsResponse>(
+    `/documents/${encodeURIComponent(documentId)}/audit-events`,
+  );
+  return response.items;
 }
 
 export function createDownloadIntent(documentId: string): Promise<DownloadIntent> {
