@@ -810,6 +810,10 @@ select:focus-visible {
   margin-top: 42px;
 }
 
+.content-grid--single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .document-panel,
 .activity-panel {
   min-width: 0;

@@ -51,6 +51,7 @@ type DocumentStatusFilter = 'ALL' | 'PROCESSING' | 'READY' | 'BLOCKED';
 type DocumentClassificationFilter = 'ALL' | DocumentClassification;
 type DocumentAccessScopeFilter = 'ALL' | DocumentAccessScope;
 type DocumentSort = 'UPDATED_DESC' | 'UPDATED_ASC' | 'TITLE_ASC' | 'TITLE_DESC';
+type MainView = 'OVERVIEW' | 'ALL_DOCUMENTS' | 'SHARED_DOCUMENTS';
 type NotificationTone = 'INFO' | 'SUCCESS' | 'WARNING' | 'DANGER';
 
 interface AppNotification {
@@ -160,6 +161,10 @@ function activityActionForStatus(status: DocumentStatus): string {
   return 'Cập nhật trạng thái tài liệu';
 }
 
+function isSharedDocument(document: DocumentSummary, currentDepartmentId: string): boolean {
+  return document.accessScope === 'ALL_EMPLOYEES' || document.departmentId !== currentDepartmentId;
+}
+
 function toDocumentItem(document: DocumentSummary): DocumentItem {
   const item: DocumentItem = {
     id: document.documentId,
@@ -182,9 +187,9 @@ function toDocumentItem(document: DocumentSummary): DocumentItem {
 }
 
 const navItems = [
-  { label: 'Tổng quan', icon: FolderKanban, active: true },
-  { label: 'Tất cả tài liệu', icon: Files },
-  { label: 'Được chia sẻ', icon: Users },
+  { label: 'Tổng quan', icon: FolderKanban, view: 'OVERVIEW' as MainView },
+  { label: 'Tất cả tài liệu', icon: Files, view: 'ALL_DOCUMENTS' as MainView },
+  { label: 'Được chia sẻ', icon: Users, view: 'SHARED_DOCUMENTS' as MainView },
   { label: 'Gần đây', icon: Clock3 },
   { label: 'Đã đánh dấu', icon: Star },
 ];
@@ -327,6 +332,8 @@ export function toInitials(name: string): string {
 
 export function NavContent({
   onNavigate,
+  activeView = 'OVERVIEW',
+  onViewChange,
   displayName,
   departmentId,
   departmentCounts = defaultDepartmentCounts,
@@ -336,6 +343,8 @@ export function NavContent({
   onLogout,
 }: {
   onNavigate?: () => void;
+  activeView?: MainView;
+  onViewChange?: (view: MainView) => void;
   displayName: string;
   departmentId: string;
   departmentCounts?: Record<DepartmentId, number>;
@@ -368,9 +377,17 @@ export function NavContent({
       <nav aria-label="Điều hướng chính">
         <p className="nav-eyebrow">Tủ tài liệu</p>
         <ul className="nav-list">
-          {navItems.map(({ label, icon: Icon, active }) => (
+          {navItems.map(({ label, icon: Icon, view }) => (
             <li key={label}>
-              <button className={active ? 'nav-link is-active' : 'nav-link'} onClick={onNavigate}>
+              <button
+                className={view === activeView ? 'nav-link is-active' : 'nav-link'}
+                onClick={() => {
+                  if (view) {
+                    onViewChange?.(view);
+                  }
+                  onNavigate?.();
+                }}
+              >
                 <Icon size={18} strokeWidth={1.7} />
                 <span>{label}</span>
                 {label === 'Được chia sẻ' && <span className="nav-count">{sharedCount}</span>}
@@ -422,6 +439,7 @@ export function NavContent({
 export function App() {
   const { currentUser, logout } = useAuth();
   const navigate = useNavigate();
+  const [activeView, setActiveView] = useState<MainView>('OVERVIEW');
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<DocumentStatusFilter>('ALL');
   const [classificationFilter, setClassificationFilter] =
@@ -467,7 +485,27 @@ export function App() {
     currentUser?.roles.some((role) => role === 'DEPARTMENT_ADMIN' || role === 'SYSTEM_ADMIN') ??
     false;
   const initials = toInitials(displayName);
-  const documents = useMemo(() => documentSummaries.map(toDocumentItem), [documentSummaries]);
+  const isOverviewView = activeView === 'OVERVIEW';
+  const isSharedView = activeView === 'SHARED_DOCUMENTS';
+  const pageKicker = isOverviewView ? 'Thứ sáu · 19 tháng 6' : 'Kho tài liệu';
+  const pageTitle = isOverviewView
+    ? 'Tài liệu cần bạn chú ý'
+    : isSharedView
+      ? 'Được chia sẻ với tôi'
+      : 'Tất cả tài liệu';
+  const pageDescription = isOverviewView
+    ? 'Phiên bản, quyền truy cập và trạng thái kiểm tra được tập trung tại một nơi.'
+    : isSharedView
+      ? 'Các tài liệu bạn có quyền xem nhờ phạm vi chia sẻ.'
+      : 'Danh sách tài liệu thật với bộ lọc, sắp xếp và phân trang tập trung.';
+  const viewDocumentSummaries = useMemo(
+    () =>
+      isSharedView
+        ? documentSummaries.filter((document) => isSharedDocument(document, departmentId))
+        : documentSummaries,
+    [departmentId, documentSummaries, isSharedView],
+  );
+  const documents = useMemo(() => viewDocumentSummaries.map(toDocumentItem), [viewDocumentSummaries]);
   const processingCount = documentSummaries.filter((document) =>
     hasProcessingDocuments([document]),
   ).length;
@@ -484,8 +522,8 @@ export function App() {
       ),
     [documentSummaries],
   );
-  const sharedDocumentCount = documentSummaries.filter(
-    (document) => document.accessScope === 'ALL_EMPLOYEES' || document.departmentId !== departmentId,
+  const sharedDocumentCount = documentSummaries.filter((document) =>
+    isSharedDocument(document, departmentId),
   ).length;
   const storageUsedBytes = documentSummaries.reduce(
     (total, document) => total + document.sizeBytes,
@@ -815,6 +853,8 @@ export function App() {
     <div className="app-shell">
       <aside className="sidebar">
         <NavContent
+          activeView={activeView}
+          onViewChange={setActiveView}
           displayName={displayName}
           departmentId={departmentId}
           departmentCounts={departmentCounts}
@@ -841,6 +881,8 @@ export function App() {
               <X size={20} />
             </button>
             <NavContent
+              activeView={activeView}
+              onViewChange={setActiveView}
               displayName={displayName}
               departmentId={departmentId}
               departmentCounts={departmentCounts}
@@ -943,17 +985,23 @@ export function App() {
         <section className="workspace" aria-labelledby="page-title">
           <div className="page-heading">
             <div>
-              <p className="section-kicker">Thứ sáu · 19 tháng 6</p>
-              <h1 id="page-title">Tài liệu cần bạn chú ý</h1>
-              <p>Phiên bản, quyền truy cập và trạng thái kiểm tra được tập trung tại một nơi.</p>
+              <p className="section-kicker">{pageKicker}</p>
+              <h1 id="page-title">{pageTitle}</h1>
+              <p>{pageDescription}</p>
             </div>
-            <button className="primary-action" onClick={() => setUploadOpen((open) => !open)}>
+            <button
+              className="primary-action"
+              onClick={() => {
+                setActiveView('OVERVIEW');
+                setUploadOpen((open) => !open);
+              }}
+            >
               <FilePlus2 size={18} />
               Tải tài liệu lên
             </button>
           </div>
 
-          {uploadOpen && (
+          {isOverviewView && uploadOpen && (
             <section className="upload-panel" aria-labelledby="upload-heading">
               <div>
                 <p className="section-kicker">Upload an toàn</p>
@@ -1025,6 +1073,7 @@ export function App() {
             </section>
           )}
 
+          {isOverviewView && (
           <div className="attention-strip">
             <div className="attention-number">
               <span>{String(processingCount).padStart(2, '0')}</span>
@@ -1049,20 +1098,36 @@ export function App() {
               <ChevronRight size={16} />
             </button>
           </div>
+          )}
 
-          <div className="content-grid">
+          <div className={isOverviewView ? 'content-grid' : 'content-grid content-grid--single'}>
             <section className="document-panel" aria-labelledby="recent-heading">
               <div className="panel-heading">
                 <div>
-                  <p className="section-kicker">Sổ cập nhật</p>
-                  <h2 id="recent-heading">Tài liệu gần đây</h2>
+                  <p className="section-kicker">
+                    {isOverviewView ? 'Sổ cập nhật' : isSharedView ? 'Phạm vi chia sẻ' : 'Kho tài liệu'}
+                  </p>
+                  <h2 id="recent-heading">
+                    {isOverviewView
+                      ? 'Tài liệu gần đây'
+                      : isSharedView
+                        ? 'Tài liệu được chia sẻ'
+                        : 'Tất cả tài liệu'}
+                  </h2>
                 </div>
                 <div className="panel-tools">
                   <button className="quiet-button" type="button">
                     <SlidersHorizontal size={16} />
                     Lọc
                   </button>
-                  <button className="quiet-button" type="button" onClick={resetDocumentFilters}>
+                  <button
+                    className="quiet-button"
+                    type="button"
+                    onClick={() => {
+                      resetDocumentFilters();
+                      setActiveView('ALL_DOCUMENTS');
+                    }}
+                  >
                     Xem tất cả
                   </button>
                 </div>
@@ -1256,7 +1321,9 @@ export function App() {
                         : 'Không tìm thấy tài liệu phù hợp'}
                     </h3>
                     <p>
-                      {documents.length === 0
+                      {documents.length === 0 && isSharedView
+                        ? 'Khi có tài liệu toàn bộ nhân viên hoặc tài liệu phòng ban khác được chia sẻ, chúng sẽ xuất hiện tại đây.'
+                        : documents.length === 0
                         ? 'Tài liệu tải lên sẽ xuất hiện tại đây.'
                         : 'Thử xóa bớt bộ lọc hoặc tìm theo tên, phòng ban và người cập nhật.'}
                     </p>
@@ -1294,6 +1361,7 @@ export function App() {
               </div>
             </section>
 
+            {isOverviewView && (
             <aside className="activity-panel" aria-labelledby="activity-heading">
               {canReviewShareRequests && (
                 <section
@@ -1469,6 +1537,7 @@ export function App() {
                 <ChevronRight size={16} />
               </button>
             </aside>
+            )}
           </div>
         </section>
       </main>

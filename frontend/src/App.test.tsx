@@ -207,6 +207,65 @@ describe('App', () => {
     expect(screen.getByText('Tài liệu đang được kiểm tra')).toBeInTheDocument();
   });
 
+  it('điều hướng sidebar sang trang tất cả tài liệu và quay lại tổng quan', async () => {
+    renderApp();
+
+    expect(await screen.findByText('Báo cáo tuần kỹ thuật')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tất cả tài liệu' }));
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Tất cả tài liệu' })).toBeInTheDocument();
+    expect(screen.queryByText('Tài liệu gần đây')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Hoạt động gần đây' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tổng quan' }));
+
+    expect(screen.getByRole('heading', { name: 'Tài liệu cần bạn chú ý' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Tài liệu gần đây' })).toBeInTheDocument();
+  });
+
+  it('mở trang tất cả tài liệu từ nút xem tất cả của dashboard', async () => {
+    renderApp();
+
+    expect(await screen.findByText('Báo cáo tuần kỹ thuật')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Xem tất cả' }));
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Tất cả tài liệu' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Hoạt động gần đây' })).not.toBeInTheDocument();
+  });
+
+  it('hiển thị riêng tài liệu được chia sẻ với người dùng', async () => {
+    mocks.listDocuments.mockResolvedValue([readyDocument, scanningDocument, rejectedDocument]);
+    renderApp();
+
+    await screen.findByText('Báo cáo tuần kỹ thuật');
+
+    fireEvent.click(screen.getByRole('button', { name: /Được chia sẻ/ }));
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Được chia sẻ với tôi' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Tài liệu được chia sẻ' })).toBeInTheDocument();
+    expect(screen.getByText('Quy trình toàn công ty')).toBeInTheDocument();
+    expect(screen.getByText('Tài liệu định dạng lỗi')).toBeInTheDocument();
+    expect(screen.queryByText('Báo cáo tuần kỹ thuật')).not.toBeInTheDocument();
+  });
+
+  it('hiển thị trạng thái rỗng khi chưa có tài liệu được chia sẻ', async () => {
+    mocks.listDocuments.mockResolvedValue([readyDocument]);
+    renderApp();
+
+    await screen.findByText('Báo cáo tuần kỹ thuật');
+
+    fireEvent.click(screen.getByRole('button', { name: /Được chia sẻ/ }));
+
+    expect(screen.getByText('Chưa có tài liệu')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Khi có tài liệu toàn bộ nhân viên hoặc tài liệu phòng ban khác được chia sẻ, chúng sẽ xuất hiện tại đây.',
+      ),
+    ).toBeInTheDocument();
+  });
+
   it('lọc tài liệu theo từ khóa', async () => {
     renderApp();
 
