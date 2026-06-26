@@ -2,6 +2,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DocumentDetailPage } from './DocumentDetailPage';
+import { ApiRequestError } from '../lib/api-client';
 
 const mocks = vi.hoisted(() => ({
   getDocumentDetail: vi.fn(),
@@ -215,4 +216,39 @@ describe('DocumentDetailPage', () => {
     expect(screen.queryByRole('heading', { name: 'Quyền đã chia sẻ' })).not.toBeInTheDocument();
     expect(mocks.listDepartmentShares).not.toHaveBeenCalled();
   });
+
+  it('shows no-permission audit error when Lambda returns DOCUMENT_NOT_FOUND', async () => {
+    mocks.listDocumentAuditEvents.mockRejectedValue(
+      new ApiRequestError(404, {
+        code: 'DOCUMENT_NOT_FOUND',
+        message: 'Không tìm thấy tài liệu.',
+        requestId: 'request-1',
+      }),
+    );
+
+    renderPage();
+
+    expect(
+      await screen.findByText('Bạn không có quyền xem lịch sử hoạt động của tài liệu này.'),
+    ).toBeInTheDocument();
+  });
+
+  it('shows deploy-route audit error when endpoint returns non-standard 404', async () => {
+    mocks.listDocumentAuditEvents.mockRejectedValue(
+      new ApiRequestError(404, {
+        code: 'UNKNOWN_ERROR',
+        message: 'HTTP 404',
+        requestId: '',
+      }),
+    );
+
+    renderPage();
+
+    expect(
+      await screen.findByText(
+        'Chưa tải được lịch sử hoạt động. Vui lòng kiểm tra backend đã deploy route audit-events.',
+      ),
+    ).toBeInTheDocument();
+  });
+
 });

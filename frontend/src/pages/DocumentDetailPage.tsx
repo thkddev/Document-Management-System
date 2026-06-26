@@ -74,6 +74,21 @@ function auditDetailLabel(event: DocumentAuditEvent): string {
   return `Phiên bản v${event.versionNumber}`;
 }
 
+function auditErrorMessage(err: unknown): string {
+  if (err instanceof ApiRequestError) {
+    if (err.status === 404 && err.error.code === 'DOCUMENT_NOT_FOUND') {
+      return 'Bạn không có quyền xem lịch sử hoạt động của tài liệu này.';
+    }
+    if (err.status === 404) {
+      return 'Chưa tải được lịch sử hoạt động. Vui lòng kiểm tra backend đã deploy route audit-events.';
+    }
+    return err.message;
+  }
+  return err instanceof Error
+    ? err.message
+    : 'Không thể tải lịch sử hoạt động. Vui lòng thử lại.';
+}
+
 export function DocumentDetailPage() {
   const { documentId = '' } = useParams();
   const navigate = useNavigate();
@@ -209,13 +224,7 @@ export function DocumentDetailPage() {
       .catch((err: unknown) => {
         if (!active) return;
         setAuditEvents([]);
-        setAuditError(
-          err instanceof ApiRequestError && err.status === 404
-            ? 'Bạn không có quyền xem lịch sử hoạt động của tài liệu này.'
-            : err instanceof Error
-              ? err.message
-              : 'Không thể tải lịch sử hoạt động. Vui lòng thử lại.',
-        );
+        setAuditError(auditErrorMessage(err));
       })
       .finally(() => {
         if (active) setAuditLoading(false);

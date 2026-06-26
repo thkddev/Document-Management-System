@@ -78,6 +78,12 @@ interface DocumentItem {
   statusReason?: string;
 }
 
+interface DashboardActivity {
+  time: string;
+  action: string;
+  target: string;
+}
+
 export const classificationLabels: Record<DocumentSummary['classification'], Classification> = {
   PUBLIC: 'Công khai',
   INTERNAL: 'Nội bộ',
@@ -114,6 +120,16 @@ export function formatSize(sizeBytes: number): string {
   return `${(sizeBytes / (1024 * 1024)).toLocaleString('vi-VN', { maximumFractionDigits: 1 })} MB`;
 }
 
+function formatStorageGb(
+  sizeBytes: number,
+  options: { minimumFractionDigits?: number } = {},
+): string {
+  return (sizeBytes / 1024 ** 3).toLocaleString('vi-VN', {
+    maximumFractionDigits: 1,
+    minimumFractionDigits: options.minimumFractionDigits ?? (sizeBytes > 0 ? 1 : 0),
+  });
+}
+
 export function formatUpdatedAt(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
@@ -124,6 +140,24 @@ export function formatUpdatedAt(value: string): string {
     hour: '2-digit',
     minute: '2-digit',
   }).format(date);
+}
+
+function formatActivityTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '--:--';
+  return new Intl.DateTimeFormat('vi-VN', {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
+}
+
+function activityActionForStatus(status: DocumentStatus): string {
+  if (status === 'READY') return 'Tài liệu đã sẵn sàng';
+  if (processingStatuses.has(status)) return 'Tài liệu đang được kiểm tra';
+  if (status === 'REJECTED') return 'Tài liệu bị từ chối';
+  if (status === 'INFECTED') return 'Phát hiện rủi ro an toàn';
+  if (status === 'FAILED') return 'Xử lý tài liệu thất bại';
+  return 'Cập nhật trạng thái tài liệu';
 }
 
 function toDocumentItem(document: DocumentSummary): DocumentItem {
@@ -161,11 +195,9 @@ export const departmentOptions = [
   { id: 'SA', label: 'Kinh doanh' },
 ] as const;
 
-const activities = [
-  { time: '10:15', action: 'Trần Minh tạo phiên bản 7', target: 'Đặc tả DMS' },
-  { time: '09:42', action: 'Nguyễn An chia sẻ với phòng Nhân sự', target: 'Quy trình tiếp nhận' },
-  { time: '08:03', action: 'Hệ thống hoàn tất kiểm tra an toàn', target: 'Biểu mẫu đánh giá' },
-];
+type DepartmentId = (typeof departmentOptions)[number]['id'];
+
+const defaultDepartmentCounts: Record<DepartmentId, number> = { HR: 0, TECH: 0, SA: 0 };
 
 const uploadClassifications: Array<{ value: DocumentClassification; label: string }> = [
   { value: 'INTERNAL', label: 'Nội bộ' },
@@ -213,6 +245,7 @@ const documentSortOptions: Array<{ value: DocumentSort; label: string }> = [
 
 const documentPageSizeOptions = [10, 20, 50] as const;
 const seenNotificationsStorageKey = 'dms:seen-notifications';
+const storageQuotaBytes = 50 * 1024 ** 3;
 
 const processingStatuses = new Set<DocumentStatus>([
   'UPLOAD_PENDING',
@@ -296,14 +329,27 @@ export function NavContent({
   onNavigate,
   displayName,
   departmentId,
+  departmentCounts = defaultDepartmentCounts,
+  sharedCount = 0,
+  storageUsedBytes = 0,
+  storageQuotaBytes = 50 * 1024 ** 3,
   onLogout,
 }: {
   onNavigate?: () => void;
   displayName: string;
   departmentId: string;
+  departmentCounts?: Record<DepartmentId, number>;
+  sharedCount?: number;
+  storageUsedBytes?: number;
+  storageQuotaBytes?: number;
   onLogout: () => void;
 }) {
   const initials = toInitials(displayName);
+  const storagePercent =
+    storageQuotaBytes > 0 ? Math.min(100, Math.round((storageUsedBytes / storageQuotaBytes) * 100)) : 0;
+  const storageSummary = `${formatStorageGb(storageUsedBytes)} / ${formatStorageGb(storageQuotaBytes, {
+    minimumFractionDigits: 0,
+  })} GB`;
 
   return (
     <>
@@ -327,7 +373,7 @@ export function NavContent({
               <button className={active ? 'nav-link is-active' : 'nav-link'} onClick={onNavigate}>
                 <Icon size={18} strokeWidth={1.7} />
                 <span>{label}</span>
-                {label === 'Được chia sẻ' && <span className="nav-count">12</span>}
+                {label === 'Được chia sẻ' && <span className="nav-count">{sharedCount}</span>}
               </button>
             </li>
           ))}
@@ -336,32 +382,24 @@ export function NavContent({
 
       <div className="cabinet-section">
         <p className="nav-eyebrow">Phòng ban</p>
-        <button className="cabinet-row" onClick={onNavigate}>
-          <span className="cabinet-code">HR</span>
-          Nhân sự
-          <span>38</span>
-        </button>
-        <button className="cabinet-row" onClick={onNavigate}>
-          <span className="cabinet-code">TE</span>
-          Kỹ thuật
-          <span>86</span>
-        </button>
-        <button className="cabinet-row" onClick={onNavigate}>
-          <span className="cabinet-code">SA</span>
-          Kinh doanh
-          <span>51</span>
-        </button>
+        {departmentOptions.map((department) => (
+          <button className="cabinet-row" key={department.id} onClick={onNavigate}>
+            <span className="cabinet-code">{department.id === 'TECH' ? 'TE' : department.id}</span>
+            {department.label}
+            <span>{departmentCounts[department.id]}</span>
+          </button>
+        ))}
       </div>
 
       <div className="storage-note">
         <div className="storage-note__heading">
           <span>Dung lượng</span>
-          <strong>18,4 / 50 GB</strong>
+          <strong>{storageSummary}</strong>
         </div>
-        <div className="storage-bar" aria-label="Đã dùng 37 phần trăm dung lượng">
-          <span />
+        <div className="storage-bar" aria-label={`Đã dùng ${storagePercent} phần trăm dung lượng`}>
+          <span style={{ width: `${storagePercent}%` }} />
         </div>
-        <small>37% đã sử dụng</small>
+        <small>{storagePercent}% đã sử dụng</small>
       </div>
 
       <button className="profile-chip" onClick={onNavigate}>
@@ -433,6 +471,38 @@ export function App() {
   const processingCount = documentSummaries.filter((document) =>
     hasProcessingDocuments([document]),
   ).length;
+  const departmentCounts = useMemo(
+    () =>
+      departmentOptions.reduce(
+        (counts, department) => ({
+          ...counts,
+          [department.id]: documentSummaries.filter(
+            (document) => document.departmentId === department.id,
+          ).length,
+        }),
+        { HR: 0, TECH: 0, SA: 0 } as Record<DepartmentId, number>,
+      ),
+    [documentSummaries],
+  );
+  const sharedDocumentCount = documentSummaries.filter(
+    (document) => document.accessScope === 'ALL_EMPLOYEES' || document.departmentId !== departmentId,
+  ).length;
+  const storageUsedBytes = documentSummaries.reduce(
+    (total, document) => total + document.sizeBytes,
+    0,
+  );
+  const dashboardActivities = useMemo<DashboardActivity[]>(
+    () =>
+      [...documentSummaries]
+        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+        .slice(0, 4)
+        .map((document) => ({
+          time: formatActivityTime(document.updatedAt),
+          action: activityActionForStatus(document.status),
+          target: document.title,
+        })),
+    [documentSummaries],
+  );
   const filteredShareRequests = useMemo(() => {
     if (shareRequestFilter === 'ALL') return shareRequests;
     return shareRequests.filter((request) => request.classification === shareRequestFilter);
@@ -744,7 +814,15 @@ export function App() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <NavContent displayName={displayName} departmentId={departmentId} onLogout={logout} />
+        <NavContent
+          displayName={displayName}
+          departmentId={departmentId}
+          departmentCounts={departmentCounts}
+          sharedCount={sharedDocumentCount}
+          storageUsedBytes={storageUsedBytes}
+          storageQuotaBytes={storageQuotaBytes}
+          onLogout={logout}
+        />
       </aside>
 
       {mobileNavOpen && (
@@ -765,6 +843,10 @@ export function App() {
             <NavContent
               displayName={displayName}
               departmentId={departmentId}
+              departmentCounts={departmentCounts}
+              sharedCount={sharedDocumentCount}
+              storageUsedBytes={storageUsedBytes}
+              storageQuotaBytes={storageQuotaBytes}
               onLogout={() => {
                 logout();
                 setMobileNavOpen(false);
@@ -1353,22 +1435,26 @@ export function App() {
               <div className="panel-heading panel-heading--compact">
                 <div>
                   <p className="section-kicker">Dòng thời gian</p>
-                  <h2 id="activity-heading">Hoạt động hôm nay</h2>
+                  <h2 id="activity-heading">Hoạt động gần đây</h2>
                 </div>
                 <History size={19} />
               </div>
 
-              <ol className="activity-list">
-                {activities.map((activity) => (
-                  <li key={`${activity.time}-${activity.target}`}>
-                    <time>{activity.time}</time>
-                    <div>
-                      <p>{activity.action}</p>
-                      <button>{activity.target}</button>
-                    </div>
-                  </li>
-                ))}
-              </ol>
+              {dashboardActivities.length === 0 ? (
+                <p className="share-review-empty">Chưa có hoạt động tài liệu.</p>
+              ) : (
+                <ol className="activity-list">
+                  {dashboardActivities.map((activity) => (
+                    <li key={`${activity.time}-${activity.target}`}>
+                      <time>{activity.time}</time>
+                      <div>
+                        <p>{activity.action}</p>
+                        <button>Xem {activity.target}</button>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              )}
 
               <div className="security-note">
                 <ShieldCheck size={22} />

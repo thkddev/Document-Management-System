@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { App } from './App';
@@ -147,6 +147,7 @@ describe('App', () => {
       expiresAt: '2026-06-20T06:35:00.000Z',
       fileName: 'bao-cao.pdf',
     });
+    window.localStorage.clear();
   });
 
   function renderApp() {
@@ -163,6 +164,47 @@ describe('App', () => {
     expect(screen.getByRole('heading', { name: 'Tài liệu cần bạn chú ý' })).toBeInTheDocument();
     expect(await screen.findByText('Báo cáo tuần kỹ thuật')).toBeInTheDocument();
     expect(screen.getAllByText('Sẵn sàng').length).toBeGreaterThan(0);
+  });
+
+  it('tính số liệu dashboard từ tài liệu và yêu cầu chia sẻ thật', async () => {
+    mocks.currentUser = {
+      ...mocks.currentUser,
+      roles: ['SYSTEM_ADMIN'],
+    };
+    mocks.listDocuments.mockResolvedValue([
+      makeDocument(1, {
+        title: 'Tài liệu kỹ thuật',
+        departmentId: 'TECH',
+        sizeBytes: 5 * 1024 ** 3,
+        status: 'READY',
+        updatedAt: '2026-06-26T09:00:00.000Z',
+      }),
+      makeDocument(2, {
+        title: 'Tài liệu nhân sự',
+        departmentId: 'HR',
+        sizeBytes: 2 * 1024 ** 3,
+        status: 'SCANNING',
+        updatedAt: '2026-06-26T10:00:00.000Z',
+      }),
+      makeDocument(3, {
+        title: 'Tài liệu kinh doanh',
+        departmentId: 'SA',
+        sizeBytes: 1024 ** 3,
+        status: 'REJECTED',
+        updatedAt: '2026-06-26T08:00:00.000Z',
+      }),
+    ]);
+    mocks.listPendingShareRequests.mockResolvedValue(pendingShareRequests);
+
+    renderApp();
+
+    expect(await screen.findByText('Tài liệu nhân sự')).toBeInTheDocument();
+    expect(screen.getByText('1 tài liệu đang kiểm tra')).toBeInTheDocument();
+    expect(screen.getByText('2 yêu cầu chia sẻ')).toBeInTheDocument();
+    expect(screen.getByText('8,0 / 50 GB')).toBeInTheDocument();
+    expect(screen.getByText('16% đã sử dụng')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Hoạt động gần đây' })).toBeInTheDocument();
+    expect(screen.getByText('Tài liệu đang được kiểm tra')).toBeInTheDocument();
   });
 
   it('lọc tài liệu theo từ khóa', async () => {
@@ -463,8 +505,9 @@ describe('App', () => {
     await screen.findByText('Báo cáo tuần kỹ thuật');
     fireEvent.click(screen.getByRole('button', { name: 'Thông báo (1)' }));
 
-    expect(screen.getByRole('dialog', { name: 'Thông báo' })).toBeInTheDocument();
-    expect(screen.getByText('Tài liệu đã sẵn sàng')).toBeInTheDocument();
+    const dialog = screen.getByRole('dialog', { name: 'Thông báo' });
+    expect(dialog).toBeInTheDocument();
+    expect(within(dialog).getByText('Tài liệu đã sẵn sàng')).toBeInTheDocument();
   });
 
   it('hiển thị thông báo yêu cầu chia sẻ cho Department Admin', async () => {
