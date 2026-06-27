@@ -385,6 +385,69 @@ describe('App', () => {
     expect(screen.getByText('Tài liệu định dạng lỗi')).toBeInTheDocument();
   });
 
+  it('kết hợp lọc phòng ban với trạng thái, phân loại và phạm vi', async () => {
+    mocks.listDocuments.mockResolvedValue([readyDocument, scanningDocument, rejectedDocument]);
+    renderApp();
+
+    await screen.findByText('Báo cáo tuần kỹ thuật');
+
+    fireEvent.click(screen.getByRole('button', { name: /Nhân sự/ }));
+    expect(screen.getByText('Đang xem tài liệu phòng Nhân sự')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Trạng thái'), {
+      target: { value: 'PROCESSING' },
+    });
+    fireEvent.change(screen.getByLabelText('Phân loại'), {
+      target: { value: 'PUBLIC' },
+    });
+    fireEvent.change(screen.getByLabelText('Phạm vi'), {
+      target: { value: 'ALL_EMPLOYEES' },
+    });
+
+    expect(screen.getByText('Quy trình toàn công ty')).toBeInTheDocument();
+    expect(screen.queryByText('Báo cáo tuần kỹ thuật')).not.toBeInTheDocument();
+    expect(screen.queryByText('Tài liệu định dạng lỗi')).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Trạng thái'), {
+      target: { value: 'READY' },
+    });
+
+    expect(screen.getByText('Không tìm thấy tài liệu phù hợp')).toBeInTheDocument();
+    expect(screen.queryByText('Quy trình toàn công ty')).not.toBeInTheDocument();
+  });
+
+  it('quay về trang đầu khi đổi phòng ban', async () => {
+    const hrDocuments = Array.from({ length: 15 }, (_, index) =>
+      makeDocument(101 + index, {
+        title: `Tài liệu nhân sự ${String(index + 1).padStart(2, '0')}`,
+        departmentId: 'HR',
+        ownerEmail: `hr-${index + 1}@example.com`,
+      }),
+    );
+    mocks.listDocuments.mockResolvedValue([
+      ...hrDocuments,
+      ...Array.from({ length: 10 }, (_, index) =>
+        makeDocument(index + 1, {
+          title: `Tài liệu kỹ thuật ${String(index + 1).padStart(2, '0')}`,
+          departmentId: 'TECH',
+        }),
+      ),
+    ]);
+    renderApp();
+
+    await screen.findByText('Tài liệu nhân sự 01');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sau' }));
+    expect(screen.getByText('Trang 2 / 3')).toBeInTheDocument();
+    expect(screen.getByText('Tài liệu nhân sự 11')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Nhân sự/ }));
+
+    expect(screen.getByText('Trang 1 / 2')).toBeInTheDocument();
+    expect(screen.getByText('Tài liệu nhân sự 01')).toBeInTheDocument();
+    expect(screen.queryByText('Tài liệu nhân sự 11')).not.toBeInTheDocument();
+  });
+
   it('lọc tài liệu theo từ khóa', async () => {
     renderApp();
 

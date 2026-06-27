@@ -916,6 +916,13 @@ select:focus-visible {
   border-bottom: 1px solid var(--rule);
 }
 
+.document-view-context {
+  margin: 12px 0 10px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
 .document-filters label {
   display: grid;
   gap: 6px;

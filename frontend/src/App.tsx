@@ -539,6 +539,15 @@ export function App() {
   const selectedDepartmentLabel =
     departmentOptions.find((department) => department.id === selectedDepartmentId)?.label ??
     'phòng ban';
+  const documentViewContext = isSharedView
+    ? 'Đang xem tài liệu được chia sẻ với bạn'
+    : isRecentView
+      ? 'Đang xem tài liệu cập nhật gần đây'
+      : isBookmarkedView
+        ? 'Đang xem tài liệu đã đánh dấu'
+        : isDepartmentView
+          ? `Đang xem tài liệu phòng ${selectedDepartmentLabel}`
+          : 'Đang xem tất cả tài liệu';
   const pageKicker = isOverviewView ? 'Thứ sáu · 19 tháng 6' : 'Kho tài liệu';
   const pageTitle = isOverviewView
     ? 'Tài liệu cần bạn chú ý'
@@ -778,7 +787,16 @@ export function App() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [accessScopeFilter, classificationFilter, documentSort, pageSize, query, statusFilter]);
+  }, [
+    accessScopeFilter,
+    activeView,
+    classificationFilter,
+    documentSort,
+    pageSize,
+    query,
+    selectedDepartmentId,
+    statusFilter,
+  ]);
 
   useEffect(() => {
     setCurrentPage((page) => Math.min(page, totalPages));
@@ -1341,6 +1359,8 @@ export function App() {
                   Xóa lọc
                 </button>
               </div>
+
+              <p className="document-view-context">{documentViewContext}</p>
 
               <div className="document-header" aria-hidden="true">
                 <span>Tài liệu</span>
