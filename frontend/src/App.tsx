@@ -51,7 +51,13 @@ type DocumentStatusFilter = 'ALL' | 'PROCESSING' | 'READY' | 'BLOCKED';
 type DocumentClassificationFilter = 'ALL' | DocumentClassification;
 type DocumentAccessScopeFilter = 'ALL' | DocumentAccessScope;
 type DocumentSort = 'UPDATED_DESC' | 'UPDATED_ASC' | 'TITLE_ASC' | 'TITLE_DESC';
-type MainView = 'OVERVIEW' | 'ALL_DOCUMENTS' | 'SHARED_DOCUMENTS';
+type MainView =
+  | 'OVERVIEW'
+  | 'ALL_DOCUMENTS'
+  | 'SHARED_DOCUMENTS'
+  | 'RECENT_DOCUMENTS'
+  | 'BOOKMARKED_DOCUMENTS'
+  | 'DEPARTMENT_DOCUMENTS';
 type NotificationTone = 'INFO' | 'SUCCESS' | 'WARNING' | 'DANGER';
 
 interface AppNotification {
@@ -190,8 +196,8 @@ const navItems = [
   { label: 'Tổng quan', icon: FolderKanban, view: 'OVERVIEW' as MainView },
   { label: 'Tất cả tài liệu', icon: Files, view: 'ALL_DOCUMENTS' as MainView },
   { label: 'Được chia sẻ', icon: Users, view: 'SHARED_DOCUMENTS' as MainView },
-  { label: 'Gần đây', icon: Clock3 },
-  { label: 'Đã đánh dấu', icon: Star },
+  { label: 'Gần đây', icon: Clock3, view: 'RECENT_DOCUMENTS' as MainView },
+  { label: 'Đã đánh dấu', icon: Star, view: 'BOOKMARKED_DOCUMENTS' as MainView },
 ];
 
 export const departmentOptions = [
@@ -250,6 +256,7 @@ const documentSortOptions: Array<{ value: DocumentSort; label: string }> = [
 
 const documentPageSizeOptions = [10, 20, 50] as const;
 const seenNotificationsStorageKey = 'dms:seen-notifications';
+const bookmarkedDocumentsStorageKey = 'dms:bookmarked-documents';
 const storageQuotaBytes = 50 * 1024 ** 3;
 
 const processingStatuses = new Set<DocumentStatus>([
@@ -298,6 +305,27 @@ function persistSeenNotificationIds(ids: ReadonlySet<string>): void {
   }
 }
 
+function readBookmarkedDocumentIds(): ReadonlySet<string> {
+  if (typeof window === 'undefined') return new Set();
+  try {
+    const raw = window.localStorage.getItem(bookmarkedDocumentsStorageKey);
+    if (!raw) return new Set();
+    const parsed: unknown = JSON.parse(raw);
+    return new Set(Array.isArray(parsed) ? parsed.filter((item) => typeof item === 'string') : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function persistBookmarkedDocumentIds(ids: ReadonlySet<string>): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(bookmarkedDocumentsStorageKey, JSON.stringify([...ids]));
+  } catch {
+    // Bookmark state is local UI convenience only.
+  }
+}
+
 function inferContentType(file: File): string {
   if (file.type) return file.type;
   const lowerName = file.name.toLowerCase();
@@ -334,6 +362,8 @@ export function NavContent({
   onNavigate,
   activeView = 'OVERVIEW',
   onViewChange,
+  selectedDepartmentId,
+  onDepartmentSelect,
   displayName,
   departmentId,
   departmentCounts = defaultDepartmentCounts,
@@ -345,6 +375,8 @@ export function NavContent({
   onNavigate?: () => void;
   activeView?: MainView;
   onViewChange?: (view: MainView) => void;
+  selectedDepartmentId?: DepartmentId | null;
+  onDepartmentSelect?: (departmentId: DepartmentId) => void;
   displayName: string;
   departmentId: string;
   departmentCounts?: Record<DepartmentId, number>;
@@ -400,7 +432,18 @@ export function NavContent({
       <div className="cabinet-section">
         <p className="nav-eyebrow">Phòng ban</p>
         {departmentOptions.map((department) => (
-          <button className="cabinet-row" key={department.id} onClick={onNavigate}>
+          <button
+            className={
+              activeView === 'DEPARTMENT_DOCUMENTS' && selectedDepartmentId === department.id
+                ? 'cabinet-row is-active'
+                : 'cabinet-row'
+            }
+            key={department.id}
+            onClick={() => {
+              onDepartmentSelect?.(department.id);
+              onNavigate?.();
+            }}
+          >
             <span className="cabinet-code">{department.id === 'TECH' ? 'TE' : department.id}</span>
             {department.label}
             <span>{departmentCounts[department.id]}</span>
@@ -440,6 +483,7 @@ export function App() {
   const { currentUser, logout } = useAuth();
   const navigate = useNavigate();
   const [activeView, setActiveView] = useState<MainView>('OVERVIEW');
+  const [selectedDepartmentId, setSelectedDepartmentId] = useState<DepartmentId | null>(null);
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<DocumentStatusFilter>('ALL');
   const [classificationFilter, setClassificationFilter] =
@@ -475,6 +519,8 @@ export function App() {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [seenNotificationIds, setSeenNotificationIds] =
     useState<ReadonlySet<string>>(readSeenNotificationIds);
+  const [bookmarkedDocumentIds, setBookmarkedDocumentIds] =
+    useState<ReadonlySet<string>>(readBookmarkedDocumentIds);
   const shareReviewPanelRef = useRef<HTMLElement | null>(null);
 
   // currentUser luôn có giá trị khi App được render (ProtectedRoute đảm bảo điều này)
@@ -487,23 +533,53 @@ export function App() {
   const initials = toInitials(displayName);
   const isOverviewView = activeView === 'OVERVIEW';
   const isSharedView = activeView === 'SHARED_DOCUMENTS';
+  const isRecentView = activeView === 'RECENT_DOCUMENTS';
+  const isBookmarkedView = activeView === 'BOOKMARKED_DOCUMENTS';
+  const isDepartmentView = activeView === 'DEPARTMENT_DOCUMENTS';
+  const selectedDepartmentLabel =
+    departmentOptions.find((department) => department.id === selectedDepartmentId)?.label ??
+    'phòng ban';
   const pageKicker = isOverviewView ? 'Thứ sáu · 19 tháng 6' : 'Kho tài liệu';
   const pageTitle = isOverviewView
     ? 'Tài liệu cần bạn chú ý'
     : isSharedView
       ? 'Được chia sẻ với tôi'
-      : 'Tất cả tài liệu';
+      : isRecentView
+        ? 'Gần đây'
+        : isBookmarkedView
+          ? 'Đã đánh dấu'
+          : isDepartmentView
+            ? `Tài liệu phòng ${selectedDepartmentLabel}`
+          : 'Tất cả tài liệu';
   const pageDescription = isOverviewView
     ? 'Phiên bản, quyền truy cập và trạng thái kiểm tra được tập trung tại một nơi.'
     : isSharedView
       ? 'Các tài liệu bạn có quyền xem nhờ phạm vi chia sẻ.'
-      : 'Danh sách tài liệu thật với bộ lọc, sắp xếp và phân trang tập trung.';
+      : isRecentView
+        ? 'Các tài liệu vừa được cập nhật, kiểm tra hoặc xử lý gần đây.'
+        : isBookmarkedView
+          ? 'Các tài liệu bạn đã lưu lại để truy cập nhanh.'
+          : isDepartmentView
+            ? `Danh sách tài liệu thuộc phòng ${selectedDepartmentLabel}.`
+          : 'Danh sách tài liệu thật với bộ lọc, sắp xếp và phân trang tập trung.';
   const viewDocumentSummaries = useMemo(
     () =>
       isSharedView
         ? documentSummaries.filter((document) => isSharedDocument(document, departmentId))
+        : isBookmarkedView
+          ? documentSummaries.filter((document) => bookmarkedDocumentIds.has(document.documentId))
+        : isDepartmentView && selectedDepartmentId
+          ? documentSummaries.filter((document) => document.departmentId === selectedDepartmentId)
         : documentSummaries,
-    [departmentId, documentSummaries, isSharedView],
+    [
+      bookmarkedDocumentIds,
+      departmentId,
+      documentSummaries,
+      isBookmarkedView,
+      isDepartmentView,
+      isSharedView,
+      selectedDepartmentId,
+    ],
   );
   const documents = useMemo(() => viewDocumentSummaries.map(toDocumentItem), [viewDocumentSummaries]);
   const processingCount = documentSummaries.filter((document) =>
@@ -593,6 +669,12 @@ export function App() {
       setUploadAccessScope('DEPARTMENT');
     }
   }, [canPublishToAllEmployees, uploadAccessScope]);
+
+  useEffect(() => {
+    if (activeView === 'RECENT_DOCUMENTS' && documentSort !== 'UPDATED_DESC') {
+      setDocumentSort('UPDATED_DESC');
+    }
+  }, [activeView, documentSort]);
 
   const filteredDocuments = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase('vi');
@@ -819,6 +901,31 @@ export function App() {
     setRejectionError('');
   }
 
+  function toggleDocumentBookmark(documentId: string): void {
+    setBookmarkedDocumentIds((current) => {
+      const next = new Set(current);
+      if (next.has(documentId)) {
+        next.delete(documentId);
+      } else {
+        next.add(documentId);
+      }
+      persistBookmarkedDocumentIds(next);
+      return next;
+    });
+  }
+
+  function handleViewChange(view: MainView): void {
+    setActiveView(view);
+    if (view !== 'DEPARTMENT_DOCUMENTS') {
+      setSelectedDepartmentId(null);
+    }
+  }
+
+  function handleDepartmentSelect(nextDepartmentId: DepartmentId): void {
+    setSelectedDepartmentId(nextDepartmentId);
+    setActiveView('DEPARTMENT_DOCUMENTS');
+  }
+
   async function handleRejectShareRequest(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
     if (!rejectingShareRequest) return;
@@ -854,7 +961,9 @@ export function App() {
       <aside className="sidebar">
         <NavContent
           activeView={activeView}
-          onViewChange={setActiveView}
+          onViewChange={handleViewChange}
+          selectedDepartmentId={selectedDepartmentId}
+          onDepartmentSelect={handleDepartmentSelect}
           displayName={displayName}
           departmentId={departmentId}
           departmentCounts={departmentCounts}
@@ -882,7 +991,9 @@ export function App() {
             </button>
             <NavContent
               activeView={activeView}
-              onViewChange={setActiveView}
+              onViewChange={handleViewChange}
+              selectedDepartmentId={selectedDepartmentId}
+              onDepartmentSelect={handleDepartmentSelect}
               displayName={displayName}
               departmentId={departmentId}
               departmentCounts={departmentCounts}
@@ -992,7 +1103,7 @@ export function App() {
             <button
               className="primary-action"
               onClick={() => {
-                setActiveView('OVERVIEW');
+                handleViewChange('OVERVIEW');
                 setUploadOpen((open) => !open);
               }}
             >
@@ -1105,13 +1216,29 @@ export function App() {
               <div className="panel-heading">
                 <div>
                   <p className="section-kicker">
-                    {isOverviewView ? 'Sổ cập nhật' : isSharedView ? 'Phạm vi chia sẻ' : 'Kho tài liệu'}
+                    {isOverviewView
+                      ? 'Sổ cập nhật'
+                      : isSharedView
+                        ? 'Phạm vi chia sẻ'
+                        : isRecentView
+                          ? 'Dòng thời gian'
+                          : isBookmarkedView
+                            ? 'Lối tắt'
+                            : isDepartmentView
+                              ? 'Phòng ban'
+                          : 'Kho tài liệu'}
                   </p>
                   <h2 id="recent-heading">
                     {isOverviewView
                       ? 'Tài liệu gần đây'
                       : isSharedView
                         ? 'Tài liệu được chia sẻ'
+                        : isRecentView
+                          ? 'Tài liệu cập nhật gần đây'
+                          : isBookmarkedView
+                            ? 'Tài liệu đã đánh dấu'
+                            : isDepartmentView
+                              ? 'Danh sách tài liệu phòng ban'
                         : 'Tất cả tài liệu'}
                   </h2>
                 </div>
@@ -1125,7 +1252,7 @@ export function App() {
                     type="button"
                     onClick={() => {
                       resetDocumentFilters();
-                      setActiveView('ALL_DOCUMENTS');
+                      handleViewChange('ALL_DOCUMENTS');
                     }}
                   >
                     Xem tất cả
@@ -1291,6 +1418,27 @@ export function App() {
                     </div>
                     <div className="row-actions">
                       <button
+                        className={
+                          bookmarkedDocumentIds.has(document.id)
+                            ? 'icon-button is-bookmarked'
+                            : 'icon-button'
+                        }
+                        aria-label={
+                          bookmarkedDocumentIds.has(document.id)
+                            ? `Bỏ đánh dấu ${document.title}`
+                            : `Đánh dấu ${document.title}`
+                        }
+                        title={
+                          bookmarkedDocumentIds.has(document.id)
+                            ? 'Bỏ đánh dấu tài liệu'
+                            : 'Đánh dấu tài liệu'
+                        }
+                        aria-pressed={bookmarkedDocumentIds.has(document.id)}
+                        onClick={() => toggleDocumentBookmark(document.id)}
+                      >
+                        <Star size={17} fill={bookmarkedDocumentIds.has(document.id) ? 'currentColor' : 'none'} />
+                      </button>
+                      <button
                         className="icon-button"
                         aria-label={`Tải ${document.title}`}
                         disabled={
@@ -1317,12 +1465,24 @@ export function App() {
                     <Archive size={28} />
                     <h3>
                       {documents.length === 0
-                        ? 'Chưa có tài liệu'
+                        ? isRecentView
+                          ? 'Chưa có hoạt động gần đây'
+                          : isBookmarkedView
+                            ? 'Chưa có tài liệu đánh dấu'
+                            : isDepartmentView
+                              ? 'Chưa có tài liệu phòng ban này'
+                          : 'Chưa có tài liệu'
                         : 'Không tìm thấy tài liệu phù hợp'}
                     </h3>
                     <p>
                       {documents.length === 0 && isSharedView
                         ? 'Khi có tài liệu toàn bộ nhân viên hoặc tài liệu phòng ban khác được chia sẻ, chúng sẽ xuất hiện tại đây.'
+                        : documents.length === 0 && isRecentView
+                          ? 'Khi tài liệu được tải lên, kiểm tra hoặc cập nhật, chúng sẽ xuất hiện tại đây.'
+                        : documents.length === 0 && isBookmarkedView
+                          ? 'Bấm biểu tượng ngôi sao trên tài liệu để lưu vào danh sách này.'
+                        : documents.length === 0 && isDepartmentView
+                          ? `Tài liệu thuộc phòng ${selectedDepartmentLabel} sẽ xuất hiện tại đây.`
                         : documents.length === 0
                         ? 'Tài liệu tải lên sẽ xuất hiện tại đây.'
                         : 'Thử xóa bớt bộ lọc hoặc tìm theo tên, phòng ban và người cập nhật.'}

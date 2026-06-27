@@ -213,10 +213,19 @@ select:focus-visible {
   color: white;
 }
 
+.cabinet-row.is-active {
+  color: white;
+  background: rgba(255, 255, 255, 0.08);
+}
+
 .cabinet-row > span:last-child {
   color: #79969c;
   font-family: 'Cascadia Mono', monospace;
   font-size: 10px;
+}
+
+.cabinet-row.is-active > span:last-child {
+  color: #dce5e4;
 }
 
 .cabinet-code {
@@ -228,6 +237,10 @@ select:focus-visible {
   border: 1px solid #56757b;
   font-family: 'Cascadia Mono', monospace;
   font-size: 8px;
+}
+
+.cabinet-row.is-active .cabinet-code {
+  border-color: var(--amber);
 }
 
 .storage-note {
@@ -401,6 +414,16 @@ select:focus-visible {
   color: #96a19d;
   cursor: not-allowed;
   opacity: 0.62;
+}
+
+.icon-button.is-bookmarked {
+  color: var(--amber);
+  background: #f4ead9;
+  border-color: #e2c98f;
+}
+
+.icon-button.is-bookmarked:hover {
+  background: #efdfbf;
 }
 
 .notification-menu {

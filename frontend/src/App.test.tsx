@@ -266,6 +266,125 @@ describe('App', () => {
     ).toBeInTheDocument();
   });
 
+  it('hiển thị trang gần đây theo thứ tự cập nhật mới nhất', async () => {
+    mocks.listDocuments.mockResolvedValue([
+      makeDocument(1, { title: 'Tài liệu cũ', updatedAt: '2026-06-01T06:00:00.000Z' }),
+      makeDocument(2, { title: 'Tài liệu mới', updatedAt: '2026-06-27T06:00:00.000Z' }),
+      makeDocument(3, { title: 'Tài liệu giữa', updatedAt: '2026-06-15T06:00:00.000Z' }),
+    ]);
+    renderApp();
+
+    await screen.findByText('Tài liệu mới');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Gần đây' }));
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Gần đây' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Tài liệu cập nhật gần đây' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Hoạt động gần đây' })).not.toBeInTheDocument();
+
+    const newest = screen.getByText('Tài liệu mới');
+    const middle = screen.getByText('Tài liệu giữa');
+    const oldest = screen.getByText('Tài liệu cũ');
+    expect(newest.compareDocumentPosition(middle)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(middle.compareDocumentPosition(oldest)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  it('hiển thị trạng thái rỗng khi chưa có hoạt động gần đây', async () => {
+    mocks.listDocuments.mockResolvedValue([]);
+    renderApp();
+
+    await screen.findByText('Chưa có tài liệu');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Gần đây' }));
+
+    expect(screen.getByText('Chưa có hoạt động gần đây')).toBeInTheDocument();
+    expect(
+      screen.getByText('Khi tài liệu được tải lên, kiểm tra hoặc cập nhật, chúng sẽ xuất hiện tại đây.'),
+    ).toBeInTheDocument();
+  });
+
+  it('đánh dấu tài liệu và hiển thị trong trang đã đánh dấu', async () => {
+    mocks.listDocuments.mockResolvedValue([readyDocument, scanningDocument]);
+    renderApp();
+
+    await screen.findByText('Báo cáo tuần kỹ thuật');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Đánh dấu Báo cáo tuần kỹ thuật' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Đã đánh dấu' }));
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Đã đánh dấu' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Tài liệu đã đánh dấu' })).toBeInTheDocument();
+    expect(screen.getByText('Báo cáo tuần kỹ thuật')).toBeInTheDocument();
+    expect(screen.queryByText('Quy trình toàn công ty')).not.toBeInTheDocument();
+  });
+
+  it('bỏ đánh dấu tài liệu khỏi trang đã đánh dấu', async () => {
+    mocks.listDocuments.mockResolvedValue([readyDocument]);
+    renderApp();
+
+    await screen.findByText('Báo cáo tuần kỹ thuật');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Đánh dấu Báo cáo tuần kỹ thuật' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Đã đánh dấu' }));
+    expect(screen.getByText('Báo cáo tuần kỹ thuật')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Bỏ đánh dấu Báo cáo tuần kỹ thuật' }));
+
+    expect(screen.getByText('Chưa có tài liệu đánh dấu')).toBeInTheDocument();
+    expect(screen.queryByText('Báo cáo tuần kỹ thuật')).not.toBeInTheDocument();
+  });
+
+  it('khôi phục tài liệu đã đánh dấu từ localStorage', async () => {
+    window.localStorage.setItem('dms:bookmarked-documents', JSON.stringify(['document-2']));
+    mocks.listDocuments.mockResolvedValue([readyDocument, scanningDocument]);
+    renderApp();
+
+    await screen.findByText('Báo cáo tuần kỹ thuật');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Đã đánh dấu' }));
+
+    expect(screen.getByText('Quy trình toàn công ty')).toBeInTheDocument();
+    expect(screen.queryByText('Báo cáo tuần kỹ thuật')).not.toBeInTheDocument();
+  });
+
+  it('lọc tài liệu theo phòng ban từ sidebar', async () => {
+    mocks.listDocuments.mockResolvedValue([readyDocument, scanningDocument, rejectedDocument]);
+    renderApp();
+
+    await screen.findByText('Báo cáo tuần kỹ thuật');
+
+    fireEvent.click(screen.getByRole('button', { name: /Nhân sự/ }));
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Tài liệu phòng Nhân sự' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Danh sách tài liệu phòng ban' })).toBeInTheDocument();
+    expect(screen.getByText('Quy trình toàn công ty')).toBeInTheDocument();
+    expect(screen.queryByText('Báo cáo tuần kỹ thuật')).not.toBeInTheDocument();
+    expect(screen.queryByText('Tài liệu định dạng lỗi')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Kỹ thuật/ }));
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Tài liệu phòng Kỹ thuật' })).toBeInTheDocument();
+    expect(screen.getByText('Báo cáo tuần kỹ thuật')).toBeInTheDocument();
+    expect(screen.queryByText('Quy trình toàn công ty')).not.toBeInTheDocument();
+  });
+
+  it('bỏ lọc phòng ban khi chuyển sang tất cả tài liệu', async () => {
+    mocks.listDocuments.mockResolvedValue([readyDocument, scanningDocument, rejectedDocument]);
+    renderApp();
+
+    await screen.findByText('Báo cáo tuần kỹ thuật');
+
+    fireEvent.click(screen.getByRole('button', { name: /Nhân sự/ }));
+    expect(screen.queryByText('Báo cáo tuần kỹ thuật')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tất cả tài liệu' }));
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Tất cả tài liệu' })).toBeInTheDocument();
+    expect(screen.getByText('Báo cáo tuần kỹ thuật')).toBeInTheDocument();
+    expect(screen.getByText('Quy trình toàn công ty')).toBeInTheDocument();
+    expect(screen.getByText('Tài liệu định dạng lỗi')).toBeInTheDocument();
+  });
+
   it('lọc tài liệu theo từ khóa', async () => {
     renderApp();
 
