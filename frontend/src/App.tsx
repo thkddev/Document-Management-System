@@ -16,9 +16,9 @@ import {
   LogOut,
   Menu,
   MoreHorizontal,
+  RefreshCw,
   Search,
   ShieldCheck,
-  SlidersHorizontal,
   Star,
   Users,
   X,
@@ -155,6 +155,16 @@ function formatActivityTime(value: string): string {
   return new Intl.DateTimeFormat('vi-VN', {
     hour: '2-digit',
     minute: '2-digit',
+  }).format(date);
+}
+
+function formatRefreshTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '--:--';
+  return new Intl.DateTimeFormat('vi-VN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
   }).format(date);
 }
 
@@ -504,6 +514,7 @@ export function App() {
   const [isUploading, setIsUploading] = useState(false);
   const [documentSummaries, setDocumentSummaries] = useState<DocumentSummary[]>([]);
   const [documentsLoading, setDocumentsLoading] = useState(true);
+  const [lastDocumentsUpdatedAt, setLastDocumentsUpdatedAt] = useState<string | null>(null);
   const [documentsError, setDocumentsError] = useState('');
   const [downloadError, setDownloadError] = useState('');
   const [downloadingDocumentId, setDownloadingDocumentId] = useState<string | null>(null);
@@ -636,6 +647,7 @@ export function App() {
     try {
       const items = await listDocuments();
       setDocumentSummaries(items);
+      setLastDocumentsUpdatedAt(new Date().toISOString());
       setDocumentsError('');
     } catch {
       setDocumentsError('Không thể cập nhật danh sách tài liệu. Vui lòng thử lại.');
@@ -807,6 +819,30 @@ export function App() {
     statusFilter !== 'ALL' ||
     classificationFilter !== 'ALL' ||
     accessScopeFilter !== 'ALL';
+  const emptyStateTitle =
+    documents.length > 0
+      ? 'Không tìm thấy tài liệu phù hợp'
+      : isSharedView
+        ? 'Chưa có tài liệu được chia sẻ'
+        : isRecentView
+          ? 'Chưa có hoạt động gần đây'
+          : isBookmarkedView
+            ? 'Chưa có tài liệu đánh dấu'
+            : isDepartmentView
+              ? `Chưa có tài liệu phòng ${selectedDepartmentLabel}`
+              : 'Chưa có tài liệu';
+  const emptyStateDescription =
+    documents.length > 0
+      ? 'Thử xóa bớt bộ lọc hoặc tìm theo tên, phòng ban và người cập nhật.'
+      : isSharedView
+        ? 'Khi có tài liệu toàn bộ nhân viên hoặc tài liệu phòng ban khác được chia sẻ, chúng sẽ xuất hiện tại đây.'
+        : isRecentView
+          ? 'Khi tài liệu được tải lên, kiểm tra hoặc cập nhật, chúng sẽ xuất hiện tại đây.'
+          : isBookmarkedView
+            ? 'Bấm biểu tượng ngôi sao trên tài liệu để lưu vào danh sách này.'
+            : isDepartmentView
+              ? `Tài liệu thuộc phòng ${selectedDepartmentLabel} sẽ xuất hiện tại đây.`
+              : 'Tài liệu tải lên sẽ xuất hiện tại đây.';
 
   function resetDocumentFilters(): void {
     setQuery('');
@@ -1261,9 +1297,14 @@ export function App() {
                   </h2>
                 </div>
                 <div className="panel-tools">
-                  <button className="quiet-button" type="button">
-                    <SlidersHorizontal size={16} />
-                    Lọc
+                  <button
+                    className="quiet-button"
+                    type="button"
+                    onClick={() => void refreshDocuments(true)}
+                    disabled={documentsLoading}
+                  >
+                    <RefreshCw size={16} />
+                    {documentsLoading ? 'Đang cập nhật' : 'Làm mới'}
                   </button>
                   <button
                     className="quiet-button"
@@ -1277,6 +1318,12 @@ export function App() {
                   </button>
                 </div>
               </div>
+
+              <p className="document-refresh-status" aria-live="polite">
+                {lastDocumentsUpdatedAt
+                  ? `Cập nhật lần cuối ${formatRefreshTime(lastDocumentsUpdatedAt)}`
+                  : 'Đang chờ dữ liệu mới nhất'}
+              </p>
 
               <div className="document-filters" aria-label="Bộ lọc tài liệu">
                 <label>
@@ -1483,30 +1530,13 @@ export function App() {
                 {!documentsLoading && !documentsError && filteredDocuments.length === 0 && (
                   <div className="empty-state">
                     <Archive size={28} />
-                    <h3>
-                      {documents.length === 0
-                        ? isRecentView
-                          ? 'Chưa có hoạt động gần đây'
-                          : isBookmarkedView
-                            ? 'Chưa có tài liệu đánh dấu'
-                            : isDepartmentView
-                              ? 'Chưa có tài liệu phòng ban này'
-                          : 'Chưa có tài liệu'
-                        : 'Không tìm thấy tài liệu phù hợp'}
-                    </h3>
-                    <p>
-                      {documents.length === 0 && isSharedView
-                        ? 'Khi có tài liệu toàn bộ nhân viên hoặc tài liệu phòng ban khác được chia sẻ, chúng sẽ xuất hiện tại đây.'
-                        : documents.length === 0 && isRecentView
-                          ? 'Khi tài liệu được tải lên, kiểm tra hoặc cập nhật, chúng sẽ xuất hiện tại đây.'
-                        : documents.length === 0 && isBookmarkedView
-                          ? 'Bấm biểu tượng ngôi sao trên tài liệu để lưu vào danh sách này.'
-                        : documents.length === 0 && isDepartmentView
-                          ? `Tài liệu thuộc phòng ${selectedDepartmentLabel} sẽ xuất hiện tại đây.`
-                        : documents.length === 0
-                        ? 'Tài liệu tải lên sẽ xuất hiện tại đây.'
-                        : 'Thử xóa bớt bộ lọc hoặc tìm theo tên, phòng ban và người cập nhật.'}
-                    </p>
+                    <h3>{emptyStateTitle}</h3>
+                    <p>{emptyStateDescription}</p>
+                    {documents.length > 0 && filtersActive && (
+                      <button className="quiet-button" type="button" onClick={resetDocumentFilters}>
+                        Xóa lọc
+                      </button>
+                    )}
                   </div>
                 )}
               </div>

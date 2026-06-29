@@ -871,6 +871,12 @@ select:focus-visible {
   gap: 7px;
 }
 
+.document-refresh-status {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
 .quiet-button {
   display: inline-flex;
   align-items: center;
@@ -1253,6 +1259,10 @@ select:focus-visible {
   margin: 0;
   color: var(--muted);
   font-size: 11px;
+}
+
+.empty-state .quiet-button {
+  margin-top: 14px;
 }
 
 .panel-heading--compact {

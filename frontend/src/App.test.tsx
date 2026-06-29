@@ -164,6 +164,43 @@ describe('App', () => {
     expect(screen.getByRole('heading', { name: 'Tài liệu cần bạn chú ý' })).toBeInTheDocument();
     expect(await screen.findByText('Báo cáo tuần kỹ thuật')).toBeInTheDocument();
     expect(screen.getAllByText('Sẵn sàng').length).toBeGreaterThan(0);
+    expect(screen.getByText(/Cập nhật lần cuối/)).toBeInTheDocument();
+  });
+
+  it('làm mới danh sách tài liệu thủ công', async () => {
+    mocks.listDocuments
+      .mockResolvedValueOnce([readyDocument])
+      .mockResolvedValueOnce([
+        {
+          ...readyDocument,
+          documentId: 'document-new',
+          title: 'Tài liệu vừa cập nhật',
+          updatedAt: '2026-06-29T07:30:00.000Z',
+        },
+      ]);
+    renderApp();
+
+    await screen.findByText('Báo cáo tuần kỹ thuật');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Làm mới' }));
+
+    expect(await screen.findByText('Tài liệu vừa cập nhật')).toBeInTheDocument();
+    expect(screen.queryByText('Báo cáo tuần kỹ thuật')).not.toBeInTheDocument();
+    expect(mocks.listDocuments).toHaveBeenCalledTimes(2);
+  });
+
+  it('hiển thị lỗi khi làm mới danh sách tài liệu thất bại', async () => {
+    mocks.listDocuments.mockResolvedValueOnce([readyDocument]).mockRejectedValueOnce(new Error('fail'));
+    renderApp();
+
+    await screen.findByText('Báo cáo tuần kỹ thuật');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Làm mới' }));
+
+    expect(
+      await screen.findByText('Không thể cập nhật danh sách tài liệu. Vui lòng thử lại.'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Làm mới' })).toBeEnabled();
   });
 
   it('tính số liệu dashboard từ tài liệu và yêu cầu chia sẻ thật', async () => {
@@ -258,7 +295,7 @@ describe('App', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Được chia sẻ/ }));
 
-    expect(screen.getByText('Chưa có tài liệu')).toBeInTheDocument();
+    expect(screen.getByText('Chưa có tài liệu được chia sẻ')).toBeInTheDocument();
     expect(
       screen.getByText(
         'Khi có tài liệu toàn bộ nhân viên hoặc tài liệu phòng ban khác được chia sẻ, chúng sẽ xuất hiện tại đây.',
@@ -385,6 +422,20 @@ describe('App', () => {
     expect(screen.getByText('Tài liệu định dạng lỗi')).toBeInTheDocument();
   });
 
+  it('hiển thị trạng thái rỗng theo phòng ban được chọn', async () => {
+    mocks.listDocuments.mockResolvedValue([readyDocument]);
+    renderApp();
+
+    await screen.findByText('Báo cáo tuần kỹ thuật');
+
+    fireEvent.click(screen.getByRole('button', { name: /Nhân sự/ }));
+
+    expect(screen.getByText('Chưa có tài liệu phòng Nhân sự')).toBeInTheDocument();
+    expect(
+      screen.getByText('Tài liệu thuộc phòng Nhân sự sẽ xuất hiện tại đây.'),
+    ).toBeInTheDocument();
+  });
+
   it('kết hợp lọc phòng ban với trạng thái, phân loại và phạm vi', async () => {
     mocks.listDocuments.mockResolvedValue([readyDocument, scanningDocument, rejectedDocument]);
     renderApp();
@@ -459,6 +510,12 @@ describe('App', () => {
 
     expect(screen.getByText('Không tìm thấy tài liệu phù hợp')).toBeInTheDocument();
     expect(screen.queryByText('Báo cáo tuần kỹ thuật')).not.toBeInTheDocument();
+
+    const clearFilterButtons = screen.getAllByRole('button', { name: 'Xóa lọc' });
+    expect(clearFilterButtons.length).toBeGreaterThan(0);
+    fireEvent.click(clearFilterButtons[clearFilterButtons.length - 1]!);
+
+    expect(screen.getByText('Báo cáo tuần kỹ thuật')).toBeInTheDocument();
   });
 
   it('lọc tài liệu theo trạng thái đang xử lý', async () => {
