@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { App } from './App';
@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   listPendingShareRequests: vi.fn(),
   approveShareRequest: vi.fn(),
   rejectShareRequest: vi.fn(),
+  createDepartmentShare: vi.fn(),
   createDownloadIntent: vi.fn(),
   triggerBrowserDownload: vi.fn(),
   currentUser: {
@@ -41,6 +42,7 @@ vi.mock('./lib/documents', async (importOriginal) => ({
   listPendingShareRequests: mocks.listPendingShareRequests,
   approveShareRequest: mocks.approveShareRequest,
   rejectShareRequest: mocks.rejectShareRequest,
+  createDepartmentShare: mocks.createDepartmentShare,
   createDownloadIntent: mocks.createDownloadIntent,
   triggerBrowserDownload: mocks.triggerBrowserDownload,
 }));
@@ -136,12 +138,18 @@ describe('App', () => {
     mocks.listPendingShareRequests.mockReset();
     mocks.approveShareRequest.mockReset();
     mocks.rejectShareRequest.mockReset();
+    mocks.createDepartmentShare.mockReset();
     mocks.createDownloadIntent.mockReset();
     mocks.triggerBrowserDownload.mockReset();
     mocks.listDocuments.mockResolvedValue([readyDocument]);
     mocks.listPendingShareRequests.mockResolvedValue([]);
     mocks.approveShareRequest.mockResolvedValue({ shareRequestId: 'share-request-1', status: 'APPROVED' });
     mocks.rejectShareRequest.mockResolvedValue({ shareRequestId: 'share-request-1', status: 'REJECTED' });
+    mocks.createDepartmentShare.mockResolvedValue({
+      mode: 'GRANTED',
+      documentId: 'document-1',
+      targetDepartmentId: 'HR',
+    });
     mocks.createDownloadIntent.mockResolvedValue({
       downloadUrl: 'https://signed.example/download',
       expiresAt: '2026-06-20T06:35:00.000Z',
@@ -497,6 +505,191 @@ describe('App', () => {
     expect(screen.getByText('Trang 1 / 2')).toBeInTheDocument();
     expect(screen.getByText('Tài liệu nhân sự 01')).toBeInTheDocument();
     expect(screen.queryByText('Tài liệu nhân sự 11')).not.toBeInTheDocument();
+  });
+
+  it('chọn một tài liệu sẵn sàng và tải xuống từ thanh hành động', async () => {
+    mocks.listDocuments.mockResolvedValue([readyDocument, scanningDocument]);
+    renderApp();
+
+    await screen.findByText('Báo cáo tuần kỹ thuật');
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Chọn Báo cáo tuần kỹ thuật' }));
+
+    expect(screen.getByText('Đã chọn 1 tài liệu')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Tải xuống' }));
+
+    await waitFor(() => expect(mocks.createDownloadIntent).toHaveBeenCalledWith('document-1'));
+    expect(mocks.triggerBrowserDownload).toHaveBeenCalledWith({
+      downloadUrl: 'https://signed.example/download',
+      expiresAt: '2026-06-20T06:35:00.000Z',
+      fileName: 'bao-cao.pdf',
+    });
+  });
+
+  it('không cho tải xuống khi chọn tài liệu chưa sẵn sàng', async () => {
+    mocks.listDocuments.mockResolvedValue([scanningDocument]);
+    renderApp();
+
+    await screen.findByText('Quy trình toàn công ty');
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Chọn Quy trình toàn công ty' }));
+
+    expect(screen.getByText('Đã chọn 1 tài liệu')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Tải xuống' })).toBeDisabled();
+  });
+
+  it('chọn tất cả tài liệu trên trang hiện tại và bỏ chọn', async () => {
+    mocks.listDocuments.mockResolvedValue([readyDocument, scanningDocument, rejectedDocument]);
+    renderApp();
+
+    await screen.findByText('Báo cáo tuần kỹ thuật');
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Chọn tất cả tài liệu trên trang' }));
+
+    expect(screen.getByText('Đã chọn 3 tài liệu')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Tải xuống' })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Bỏ chọn' }));
+
+    expect(screen.queryByText('Đã chọn 3 tài liệu')).not.toBeInTheDocument();
+  });
+
+  it('tự bỏ chọn tài liệu không còn trong danh sách sau khi lọc', async () => {
+    mocks.listDocuments.mockResolvedValue([readyDocument, scanningDocument]);
+    renderApp();
+
+    await screen.findByText('Báo cáo tuần kỹ thuật');
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Chọn Báo cáo tuần kỹ thuật' }));
+    expect(screen.getByText('Đã chọn 1 tài liệu')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Trạng thái'), {
+      target: { value: 'PROCESSING' },
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText('Đã chọn 1 tài liệu')).not.toBeInTheDocument();
+    });
+    expect(screen.getByText('Quy trình toàn công ty')).toBeInTheDocument();
+  });
+
+  it('mở menu thao tác nhanh của tài liệu', async () => {
+    mocks.listDocuments.mockResolvedValue([readyDocument]);
+    renderApp();
+
+    await screen.findByText('Báo cáo tuần kỹ thuật');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tùy chọn cho Báo cáo tuần kỹ thuật' }));
+
+    expect(screen.getByRole('menuitem', { name: 'Xem chi tiết' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Tải xuống' })).toBeEnabled();
+    expect(screen.getByRole('menuitem', { name: 'Đánh dấu' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Lịch sử hoạt động' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Chia sẻ' })).toBeInTheDocument();
+  });
+
+  it('mở modal chia sẻ phòng ban từ menu thao tác nhanh', async () => {
+    mocks.listDocuments.mockResolvedValue([readyDocument]);
+    renderApp();
+
+    await screen.findByText('Báo cáo tuần kỹ thuật');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tùy chọn cho Báo cáo tuần kỹ thuật' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Chia sẻ' }));
+
+    expect(screen.queryByRole('menuitem', { name: 'Chia sẻ' })).not.toBeInTheDocument();
+    const dialog = screen.getByRole('dialog', { name: 'Chia sẻ phòng ban' });
+    expect(dialog).toBeInTheDocument();
+    expect(within(dialog).getByText('Báo cáo tuần kỹ thuật')).toBeInTheDocument();
+    expect(screen.getByLabelText('Phòng ban nhận')).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Kỹ thuật' })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Phòng ban nhận'), {
+      target: { value: 'HR' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Chia sẻ' }));
+
+    await waitFor(() =>
+      expect(mocks.createDepartmentShare).toHaveBeenCalledWith('document-1', 'HR'),
+    );
+    expect(screen.getByText('Đã chia sẻ tài liệu cho phòng ban đã chọn.')).toBeInTheDocument();
+  });
+
+  it('đóng modal chia sẻ phòng ban bằng nút hủy', async () => {
+    mocks.listDocuments.mockResolvedValue([readyDocument]);
+    renderApp();
+
+    await screen.findByText('Báo cáo tuần kỹ thuật');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tùy chọn cho Báo cáo tuần kỹ thuật' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Chia sẻ' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Hủy' }));
+
+    expect(screen.queryByRole('dialog', { name: 'Chia sẻ phòng ban' })).not.toBeInTheDocument();
+  });
+
+  it('hiển thị thông báo chờ duyệt khi chia sẻ tài liệu cần phê duyệt', async () => {
+    mocks.listDocuments.mockResolvedValue([{ ...readyDocument, classification: 'CONFIDENTIAL' }]);
+    mocks.createDepartmentShare.mockResolvedValue({
+      mode: 'PENDING_APPROVAL',
+      documentId: 'document-1',
+      targetDepartmentId: 'HR',
+      shareRequestId: 'share-request-1',
+    });
+    renderApp();
+
+    await screen.findByText('Báo cáo tuần kỹ thuật');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tùy chọn cho Báo cáo tuần kỹ thuật' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Chia sẻ' }));
+    fireEvent.change(screen.getByLabelText('Phòng ban nhận'), {
+      target: { value: 'HR' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Chia sẻ' }));
+
+    expect(
+      await screen.findByText('Đã gửi yêu cầu chia sẻ, đang chờ quản trị phòng ban duyệt.'),
+    ).toBeInTheDocument();
+  });
+
+  it('tải xuống từ menu thao tác nhanh và đóng menu', async () => {
+    mocks.listDocuments.mockResolvedValue([readyDocument]);
+    renderApp();
+
+    await screen.findByText('Báo cáo tuần kỹ thuật');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tùy chọn cho Báo cáo tuần kỹ thuật' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Tải xuống' }));
+
+    await waitFor(() => expect(mocks.createDownloadIntent).toHaveBeenCalledWith('document-1'));
+    expect(screen.queryByRole('menuitem', { name: 'Tải xuống' })).not.toBeInTheDocument();
+  });
+
+  it('đánh dấu tài liệu từ menu thao tác nhanh', async () => {
+    mocks.listDocuments.mockResolvedValue([readyDocument]);
+    renderApp();
+
+    await screen.findByText('Báo cáo tuần kỹ thuật');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tùy chọn cho Báo cáo tuần kỹ thuật' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Đánh dấu' }));
+
+    expect(screen.queryByRole('menuitem', { name: 'Đánh dấu' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tùy chọn cho Báo cáo tuần kỹ thuật' }));
+
+    expect(screen.getByRole('menuitem', { name: 'Bỏ đánh dấu' })).toBeInTheDocument();
+  });
+
+  it('không cho tải xuống từ menu khi tài liệu chưa sẵn sàng', async () => {
+    mocks.listDocuments.mockResolvedValue([scanningDocument]);
+    renderApp();
+
+    await screen.findByText('Quy trình toàn công ty');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tùy chọn cho Quy trình toàn công ty' }));
+
+    expect(screen.getByRole('menuitem', { name: 'Tải xuống' })).toBeDisabled();
   });
 
   it('lọc tài liệu theo từ khóa', async () => {

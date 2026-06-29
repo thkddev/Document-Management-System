@@ -989,7 +989,7 @@ select:focus-visible {
 .document-header,
 .document-row {
   display: grid;
-  grid-template-columns: minmax(300px, 1fr) 142px 82px 75px;
+  grid-template-columns: 26px minmax(300px, 1fr) 142px 82px 75px;
   gap: 14px;
   align-items: center;
 }
@@ -1028,6 +1028,48 @@ select:focus-visible {
 
 .document-row:hover::before {
   background: var(--amber);
+}
+
+.bulk-action-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--rule);
+  background: rgba(255, 255, 255, 0.58);
+}
+
+.bulk-action-bar > span {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.bulk-action-bar > div {
+  display: flex;
+  gap: 7px;
+}
+
+.selection-checkbox {
+  display: inline-grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+}
+
+.selection-checkbox input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--ledger-blue);
+  cursor: pointer;
+}
+
+.selection-checkbox input:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .document-identity {
@@ -1235,6 +1277,122 @@ select:focus-visible {
 .row-actions .icon-button {
   width: 32px;
   height: 32px;
+}
+
+.row-menu {
+  position: relative;
+}
+
+.row-action-menu {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 6px);
+  right: 0;
+  display: grid;
+  min-width: 178px;
+  padding: 6px;
+  border: 1px solid var(--rule);
+  background: #fbfcf8;
+  box-shadow: 0 18px 34px rgba(24, 42, 46, 0.14);
+}
+
+.row-action-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  padding: 0 9px;
+  color: var(--ink);
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: left;
+}
+
+.row-action-menu button:hover:not(:disabled) {
+  background: rgba(47, 111, 120, 0.08);
+}
+
+.row-action-menu button:disabled {
+  color: #8c9699;
+  cursor: not-allowed;
+  opacity: 0.68;
+}
+
+.share-modal-backdrop {
+  position: fixed;
+  z-index: 40;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(16, 30, 34, 0.42);
+}
+
+.share-modal {
+  position: relative;
+  display: grid;
+  width: min(640px, 100%);
+  gap: 16px;
+  padding: 28px;
+  border: 1px solid var(--rule);
+  border-top: 3px solid var(--ink);
+  background: #f4f8f2;
+  box-shadow: 0 24px 60px rgba(24, 42, 46, 0.26);
+}
+
+.share-modal-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+}
+
+.share-modal-heading h2 {
+  margin: 4px 0 6px;
+  font-size: 24px;
+}
+
+.share-modal-heading span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.share-modal label {
+  display: grid;
+  gap: 7px;
+}
+
+.share-modal label span {
+  color: #637176;
+  font-family: 'Cascadia Mono', monospace;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.share-modal select {
+  min-height: 46px;
+  padding: 0 14px;
+  color: var(--ink);
+  border: 1px solid var(--ledger-blue);
+  background: rgba(255, 255, 255, 0.5);
+  font: inherit;
+}
+
+.share-modal-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.share-modal .upload-status {
+  margin: 0;
 }
 
 .empty-state {
@@ -2112,24 +2270,56 @@ select:focus-visible {
     justify-content: space-between;
   }
 
+  .bulk-action-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .bulk-action-bar > div {
+    justify-content: space-between;
+  }
+
+  .share-modal {
+    padding: 24px 18px;
+  }
+
+  .share-modal-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .share-modal-actions .primary-action,
+  .share-modal-actions .quiet-button {
+    justify-content: center;
+  }
+
   .document-row {
-    grid-template-columns: 1fr auto;
+    grid-template-columns: 26px 1fr auto;
     gap: 12px;
     padding: 16px 7px;
   }
 
-  .document-owner {
+  .document-row > .selection-checkbox {
     grid-column: 1;
-    padding-left: 55px;
+    grid-row: 1;
+  }
+
+  .document-identity {
+    grid-column: 2;
+  }
+
+  .document-owner {
+    grid-column: 2;
+    padding-left: 0;
   }
 
   .version-spine {
-    grid-column: 2;
+    grid-column: 3;
     grid-row: 1;
   }
 
   .row-actions {
-    grid-column: 2;
+    grid-column: 3;
     grid-row: 2;
   }
 

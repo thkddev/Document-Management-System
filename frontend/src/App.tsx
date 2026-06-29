@@ -8,6 +8,7 @@ import {
   CircleUserRound,
   Clock3,
   Download,
+  Eye,
   FileClock,
   FilePlus2,
   Files,
@@ -18,6 +19,7 @@ import {
   MoreHorizontal,
   RefreshCw,
   Search,
+  Share2,
   ShieldCheck,
   Star,
   Users,
@@ -26,6 +28,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from './features/auth/AuthContext';
 import {
+  createDepartmentShare,
   createDownloadIntent as requestDownloadIntent,
   approveShareRequest,
   hasProcessingDocuments,
@@ -74,6 +77,7 @@ interface DocumentItem {
   title: string;
   type: 'PDF' | 'DOCX' | 'XLSX' | 'PNG' | 'JPG' | 'FILE';
   department: string;
+  departmentId: string;
   owner: string;
   version: number;
   size: string;
@@ -187,6 +191,7 @@ function toDocumentItem(document: DocumentSummary): DocumentItem {
     title: document.title,
     type: fileType(document),
     department: document.departmentId,
+    departmentId: document.departmentId,
     owner: document.ownerEmail,
     version: document.currentVersion,
     size: formatSize(document.sizeBytes),
@@ -532,6 +537,15 @@ export function App() {
     useState<ReadonlySet<string>>(readSeenNotificationIds);
   const [bookmarkedDocumentIds, setBookmarkedDocumentIds] =
     useState<ReadonlySet<string>>(readBookmarkedDocumentIds);
+  const [selectedDocumentIds, setSelectedDocumentIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const [openDocumentMenuId, setOpenDocumentMenuId] = useState<string | null>(null);
+  const [shareDialogDocument, setShareDialogDocument] = useState<DocumentItem | null>(null);
+  const [inlineShareDepartmentId, setInlineShareDepartmentId] = useState('');
+  const [inlineShareSubmitting, setInlineShareSubmitting] = useState(false);
+  const [inlineShareMessage, setInlineShareMessage] = useState('');
+  const [inlineShareError, setInlineShareError] = useState('');
   const shareReviewPanelRef = useRef<HTMLElement | null>(null);
 
   // currentUser luôn có giá trị khi App được render (ProtectedRoute đảm bảo điều này)
@@ -745,6 +759,24 @@ export function App() {
   const pageStartIndex = sortedDocuments.length === 0 ? 0 : (safeCurrentPage - 1) * pageSize;
   const pageEndIndex = Math.min(pageStartIndex + pageSize, sortedDocuments.length);
   const paginatedDocuments = sortedDocuments.slice(pageStartIndex, pageEndIndex);
+  const selectedDocuments = sortedDocuments.filter((document) =>
+    selectedDocumentIds.has(document.id),
+  );
+  const selectedReadyDocument =
+    selectedDocuments.length === 1 && selectedDocuments[0]?.status === 'READY'
+      ? selectedDocuments[0]
+      : null;
+  const currentPageDocumentIds = paginatedDocuments.map((document) => document.id);
+  const currentPageSelectableCount = currentPageDocumentIds.length;
+  const currentPageSelectedCount = currentPageDocumentIds.filter((documentId) =>
+    selectedDocumentIds.has(documentId),
+  ).length;
+  const currentPageSelectionState =
+    currentPageSelectableCount > 0 && currentPageSelectedCount === currentPageSelectableCount
+      ? true
+      : currentPageSelectedCount > 0
+        ? 'mixed'
+        : false;
   const notifications = useMemo<AppNotification[]>(() => {
     const shareNotifications: AppNotification[] = canReviewShareRequests
       ? shareRequests.slice(0, 5).map((request) => ({
@@ -813,6 +845,16 @@ export function App() {
   useEffect(() => {
     setCurrentPage((page) => Math.min(page, totalPages));
   }, [totalPages]);
+
+  useEffect(() => {
+    const visibleIds = new Set(sortedDocuments.map((document) => document.id));
+    setSelectedDocumentIds((current) => {
+      const next = new Set([...current].filter((documentId) => visibleIds.has(documentId)));
+      return next.size === current.size ? current : next;
+    });
+    setOpenDocumentMenuId((current) => (current && visibleIds.has(current) ? current : null));
+    setShareDialogDocument((current) => (current && visibleIds.has(current.id) ? current : null));
+  }, [sortedDocuments]);
 
   const filtersActive =
     query.trim().length > 0 ||
@@ -966,6 +1008,97 @@ export function App() {
       persistBookmarkedDocumentIds(next);
       return next;
     });
+  }
+
+  function toggleDocumentSelection(documentId: string): void {
+    setSelectedDocumentIds((current) => {
+      const next = new Set(current);
+      if (next.has(documentId)) {
+        next.delete(documentId);
+      } else {
+        next.add(documentId);
+      }
+      return next;
+    });
+  }
+
+  function toggleCurrentPageSelection(): void {
+    setSelectedDocumentIds((current) => {
+      const next = new Set(current);
+      const shouldSelectPage =
+        currentPageDocumentIds.length > 0 &&
+        currentPageDocumentIds.some((documentId) => !next.has(documentId));
+      for (const documentId of currentPageDocumentIds) {
+        if (shouldSelectPage) {
+          next.add(documentId);
+        } else {
+          next.delete(documentId);
+        }
+      }
+      return next;
+    });
+  }
+
+  function clearDocumentSelection(): void {
+    setSelectedDocumentIds(new Set());
+  }
+
+  function toggleDocumentMenu(documentId: string): void {
+    setOpenDocumentMenuId((current) => (current === documentId ? null : documentId));
+  }
+
+  function closeDocumentMenu(): void {
+    setOpenDocumentMenuId(null);
+  }
+
+  function navigateToDocument(documentId: string, hash = ''): void {
+    closeDocumentMenu();
+    navigate(`/documents/${documentId}${hash}`);
+  }
+
+  function openInlineShare(document: DocumentItem): void {
+    closeDocumentMenu();
+    setShareDialogDocument(document);
+    setInlineShareDepartmentId('');
+    setInlineShareMessage('');
+    setInlineShareError('');
+  }
+
+  function closeInlineShare(): void {
+    setShareDialogDocument(null);
+    setInlineShareDepartmentId('');
+    setInlineShareMessage('');
+    setInlineShareError('');
+  }
+
+  async function handleInlineShareSubmit(
+    event: FormEvent<HTMLFormElement>,
+    document: DocumentItem,
+  ): Promise<void> {
+    event.preventDefault();
+    if (!inlineShareDepartmentId) {
+      setInlineShareError('Vui lòng chọn phòng ban nhận.');
+      return;
+    }
+
+    setInlineShareSubmitting(true);
+    setInlineShareMessage('');
+    setInlineShareError('');
+    try {
+      const result = await createDepartmentShare(document.id, inlineShareDepartmentId);
+      setInlineShareDepartmentId('');
+      setInlineShareMessage(
+        result.mode === 'PENDING_APPROVAL'
+          ? 'Đã gửi yêu cầu chia sẻ, đang chờ quản trị phòng ban duyệt.'
+          : 'Đã chia sẻ tài liệu cho phòng ban đã chọn.',
+      );
+    } catch (err) {
+      setInlineShareError(
+        err instanceof Error ? err.message : 'Không thể chia sẻ tài liệu. Vui lòng thử lại.',
+      );
+    } finally {
+      setInlineShareSubmitting(false);
+    }
   }
 
   function handleViewChange(view: MainView): void {
@@ -1409,7 +1542,42 @@ export function App() {
 
               <p className="document-view-context">{documentViewContext}</p>
 
-              <div className="document-header" aria-hidden="true">
+              {selectedDocumentIds.size > 0 && (
+                <div className="bulk-action-bar" role="status" aria-live="polite">
+                  <span>Đã chọn {selectedDocumentIds.size} tài liệu</span>
+                  <div>
+                    <button className="quiet-button" type="button" onClick={clearDocumentSelection}>
+                      Bỏ chọn
+                    </button>
+                    <button
+                      className="quiet-button"
+                      type="button"
+                      disabled={!selectedReadyDocument}
+                      onClick={() => {
+                        if (selectedReadyDocument) {
+                          void handleQuickDownload(selectedReadyDocument.id);
+                        }
+                      }}
+                    >
+                      <Download size={16} />
+                      Tải xuống
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="document-header">
+                <label className="selection-checkbox selection-checkbox--header">
+                  <input
+                    type="checkbox"
+                    aria-label="Chọn tất cả tài liệu trên trang"
+                    aria-checked={currentPageSelectionState}
+                    checked={currentPageSelectionState === true}
+                    disabled={paginatedDocuments.length === 0}
+                    onChange={toggleCurrentPageSelection}
+                  />
+                  <span />
+                </label>
                 <span>Tài liệu</span>
                 <span>Người cập nhật</span>
                 <span>Phiên bản</span>
@@ -1438,6 +1606,15 @@ export function App() {
 
                 {paginatedDocuments.map((document) => (
                   <article className="document-row" key={document.id}>
+                    <label className="selection-checkbox">
+                      <input
+                        type="checkbox"
+                        aria-label={`Chọn ${document.title}`}
+                        checked={selectedDocumentIds.has(document.id)}
+                        onChange={() => toggleDocumentSelection(document.id)}
+                      />
+                      <span />
+                    </label>
                     <div className="document-identity">
                       <FileTypeMark type={document.type} />
                       <div>
@@ -1520,9 +1697,74 @@ export function App() {
                       >
                         <Download size={17} />
                       </button>
-                      <button className="icon-button" aria-label={`Tùy chọn cho ${document.title}`}>
+                      <div className="row-menu">
+                        <button
+                          className="icon-button"
+                          aria-label={`Tùy chọn cho ${document.title}`}
+                          aria-expanded={openDocumentMenuId === document.id}
+                          aria-haspopup="menu"
+                          onClick={() => toggleDocumentMenu(document.id)}
+                        >
                         <MoreHorizontal size={18} />
-                      </button>
+                        </button>
+                        {openDocumentMenuId === document.id && (
+                          <div className="row-action-menu" role="menu">
+                            <button
+                              type="button"
+                              role="menuitem"
+                              onClick={() => navigateToDocument(document.id)}
+                            >
+                              <Eye size={15} />
+                              Xem chi tiết
+                            </button>
+                            <button
+                              type="button"
+                              role="menuitem"
+                              disabled={
+                                document.status !== 'READY' ||
+                                downloadingDocumentId === document.id
+                              }
+                              onClick={() => {
+                                closeDocumentMenu();
+                                void handleQuickDownload(document.id);
+                              }}
+                            >
+                              <Download size={15} />
+                              Tải xuống
+                            </button>
+                            <button
+                              type="button"
+                              role="menuitem"
+                              onClick={() => {
+                                toggleDocumentBookmark(document.id);
+                                closeDocumentMenu();
+                              }}
+                            >
+                              <Star
+                                size={15}
+                                fill={bookmarkedDocumentIds.has(document.id) ? 'currentColor' : 'none'}
+                              />
+                              {bookmarkedDocumentIds.has(document.id) ? 'Bỏ đánh dấu' : 'Đánh dấu'}
+                            </button>
+                            <button
+                              type="button"
+                              role="menuitem"
+                              onClick={() => navigateToDocument(document.id, '#audit-heading')}
+                            >
+                              <History size={15} />
+                              Lịch sử hoạt động
+                            </button>
+                            <button
+                              type="button"
+                              role="menuitem"
+                              onClick={() => openInlineShare(document)}
+                            >
+                              <Share2 size={15} />
+                              Chia sẻ
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </article>
                 ))}
@@ -1749,6 +1991,87 @@ export function App() {
             </aside>
             )}
           </div>
+
+          {shareDialogDocument && (
+            <div
+              className="share-modal-backdrop"
+              role="presentation"
+              onMouseDown={(event) => {
+                if (event.target === event.currentTarget && !inlineShareSubmitting) {
+                  closeInlineShare();
+                }
+              }}
+            >
+              <form
+                className="share-modal"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="share-modal-heading"
+                onSubmit={(event) => void handleInlineShareSubmit(event, shareDialogDocument)}
+              >
+                <button
+                  className="icon-button share-modal-close"
+                  type="button"
+                  aria-label="Đóng chia sẻ"
+                  disabled={inlineShareSubmitting}
+                  onClick={closeInlineShare}
+                >
+                  <X size={18} />
+                </button>
+                <div className="share-modal-heading">
+                  <p className="section-kicker">Chia sẻ an toàn</p>
+                  <h2 id="share-modal-heading">Chia sẻ phòng ban</h2>
+                  <span>{shareDialogDocument.title}</span>
+                </div>
+                <label>
+                  <span>Phòng ban nhận</span>
+                  <select
+                    value={inlineShareDepartmentId}
+                    onChange={(event) => {
+                      setInlineShareDepartmentId(event.target.value);
+                      setInlineShareError('');
+                      setInlineShareMessage('');
+                    }}
+                  >
+                    <option value="">Chọn phòng ban</option>
+                    {departmentOptions
+                      .filter((department) => department.id !== shareDialogDocument.departmentId)
+                      .map((department) => (
+                        <option key={department.id} value={department.id}>
+                          {department.label}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+                <div className="share-modal-actions">
+                  <button
+                    className="primary-action"
+                    type="submit"
+                    disabled={inlineShareSubmitting || !inlineShareDepartmentId}
+                  >
+                    <Share2 size={17} />
+                    {inlineShareSubmitting ? 'Đang chia sẻ' : 'Chia sẻ'}
+                  </button>
+                  <button
+                    className="quiet-button"
+                    type="button"
+                    disabled={inlineShareSubmitting}
+                    onClick={closeInlineShare}
+                  >
+                    Hủy
+                  </button>
+                </div>
+                {inlineShareMessage && (
+                  <p className="upload-status upload-status--success">{inlineShareMessage}</p>
+                )}
+                {inlineShareError && (
+                  <p className="upload-status upload-status--error" role="alert">
+                    {inlineShareError}
+                  </p>
+                )}
+              </form>
+            </div>
+          )}
         </section>
       </main>
     </div>
