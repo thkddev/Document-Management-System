@@ -2323,6 +2323,12 @@ select:focus-visible {
     grid-row: 2;
   }
 
+  .row-action-menu {
+    right: 0;
+    min-width: min(178px, calc(100vw - 32px));
+    max-width: calc(100vw - 32px);
+  }
+
   .activity-panel {
     grid-template-columns: 1fr;
   }

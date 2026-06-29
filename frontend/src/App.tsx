@@ -547,6 +547,8 @@ export function App() {
   const [inlineShareMessage, setInlineShareMessage] = useState('');
   const [inlineShareError, setInlineShareError] = useState('');
   const shareReviewPanelRef = useRef<HTMLElement | null>(null);
+  const documentMenuRef = useRef<HTMLDivElement | null>(null);
+  const shareDepartmentSelectRef = useRef<HTMLSelectElement | null>(null);
 
   // currentUser luôn có giá trị khi App được render (ProtectedRoute đảm bảo điều này)
   const displayName = currentUser?.displayName ?? '';
@@ -855,6 +857,47 @@ export function App() {
     setOpenDocumentMenuId((current) => (current && visibleIds.has(current) ? current : null));
     setShareDialogDocument((current) => (current && visibleIds.has(current.id) ? current : null));
   }, [sortedDocuments]);
+
+  useEffect(() => {
+    if (!openDocumentMenuId) return;
+
+    function handleOutsideMouseDown(event: MouseEvent): void {
+      const target = event.target;
+      if (target instanceof Node && documentMenuRef.current?.contains(target)) return;
+      setOpenDocumentMenuId(null);
+    }
+
+    function handleEscape(event: KeyboardEvent): void {
+      if (event.key === 'Escape') {
+        setOpenDocumentMenuId(null);
+      }
+    }
+
+    document.addEventListener('mousedown', handleOutsideMouseDown);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideMouseDown);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [openDocumentMenuId]);
+
+  useEffect(() => {
+    if (!shareDialogDocument) return;
+
+    const focusTimer = window.setTimeout(() => shareDepartmentSelectRef.current?.focus(), 0);
+
+    function handleEscape(event: KeyboardEvent): void {
+      if (event.key === 'Escape' && !inlineShareSubmitting) {
+        closeInlineShare();
+      }
+    }
+
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      window.clearTimeout(focusTimer);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [inlineShareSubmitting, shareDialogDocument]);
 
   const filtersActive =
     query.trim().length > 0 ||
@@ -1684,12 +1727,18 @@ export function App() {
                       </button>
                       <button
                         className="icon-button"
-                        aria-label={`Tải ${document.title}`}
+                        aria-label={
+                          downloadingDocumentId === document.id
+                            ? `Đang tải ${document.title}`
+                            : `Tải ${document.title}`
+                        }
                         disabled={
                           document.status !== 'READY' || downloadingDocumentId === document.id
                         }
                         title={
-                          document.status === 'READY'
+                          downloadingDocumentId === document.id
+                            ? 'Đang tạo liên kết tải xuống'
+                            : document.status === 'READY'
                             ? 'Tải tài liệu xuống'
                             : 'Tài liệu chưa sẵn sàng để tải xuống'
                         }
@@ -1697,12 +1746,16 @@ export function App() {
                       >
                         <Download size={17} />
                       </button>
-                      <div className="row-menu">
+                      <div
+                        className="row-menu"
+                        ref={openDocumentMenuId === document.id ? documentMenuRef : undefined}
+                      >
                         <button
                           className="icon-button"
                           aria-label={`Tùy chọn cho ${document.title}`}
                           aria-expanded={openDocumentMenuId === document.id}
                           aria-haspopup="menu"
+                          title="Mở menu thao tác tài liệu"
                           onClick={() => toggleDocumentMenu(document.id)}
                         >
                         <MoreHorizontal size={18} />
@@ -1712,6 +1765,7 @@ export function App() {
                             <button
                               type="button"
                               role="menuitem"
+                              title="Mở trang chi tiết tài liệu"
                               onClick={() => navigateToDocument(document.id)}
                             >
                               <Eye size={15} />
@@ -1720,6 +1774,13 @@ export function App() {
                             <button
                               type="button"
                               role="menuitem"
+                              title={
+                                downloadingDocumentId === document.id
+                                  ? 'Đang tạo liên kết tải xuống'
+                                  : document.status === 'READY'
+                                    ? 'Tải tài liệu xuống'
+                                    : 'Tài liệu chưa sẵn sàng để tải xuống'
+                              }
                               disabled={
                                 document.status !== 'READY' ||
                                 downloadingDocumentId === document.id
@@ -1730,11 +1791,16 @@ export function App() {
                               }}
                             >
                               <Download size={15} />
-                              Tải xuống
+                              {downloadingDocumentId === document.id ? 'Đang tải' : 'Tải xuống'}
                             </button>
                             <button
                               type="button"
                               role="menuitem"
+                              title={
+                                bookmarkedDocumentIds.has(document.id)
+                                  ? 'Bỏ đánh dấu tài liệu'
+                                  : 'Đánh dấu tài liệu'
+                              }
                               onClick={() => {
                                 toggleDocumentBookmark(document.id);
                                 closeDocumentMenu();
@@ -1749,6 +1815,7 @@ export function App() {
                             <button
                               type="button"
                               role="menuitem"
+                              title="Xem lịch sử hoạt động của tài liệu"
                               onClick={() => navigateToDocument(document.id, '#audit-heading')}
                             >
                               <History size={15} />
@@ -1757,6 +1824,7 @@ export function App() {
                             <button
                               type="button"
                               role="menuitem"
+                              title="Chia sẻ tài liệu cho phòng ban khác"
                               onClick={() => openInlineShare(document)}
                             >
                               <Share2 size={15} />
@@ -2026,6 +2094,7 @@ export function App() {
                 <label>
                   <span>Phòng ban nhận</span>
                   <select
+                    ref={shareDepartmentSelectRef}
                     value={inlineShareDepartmentId}
                     onChange={(event) => {
                       setInlineShareDepartmentId(event.target.value);

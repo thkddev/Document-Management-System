@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { App } from './App';
 
 const mocks = vi.hoisted(() => ({
@@ -126,6 +126,11 @@ const pendingShareRequests = [
 ];
 
 describe('App', () => {
+  function LocationProbe() {
+    const location = useLocation();
+    return <span data-testid="location">{`${location.pathname}${location.hash}`}</span>;
+  }
+
   beforeEach(() => {
     mocks.currentUser = {
       userId: 'user-1',
@@ -161,6 +166,7 @@ describe('App', () => {
   function renderApp() {
     return render(
       <MemoryRouter>
+        <LocationProbe />
         <App />
       </MemoryRouter>,
     );
@@ -588,6 +594,118 @@ describe('App', () => {
     expect(screen.getByRole('menuitem', { name: 'Chia sẻ' })).toBeInTheDocument();
   });
 
+  it('mở trang chi tiết khi bấm tên tài liệu', async () => {
+    mocks.listDocuments.mockResolvedValue([readyDocument]);
+    renderApp();
+
+    await screen.findByText('Báo cáo tuần kỹ thuật');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Báo cáo tuần kỹ thuật' }));
+
+    expect(screen.getByTestId('location')).toHaveTextContent('/documents/document-1');
+  });
+
+  it('không điều hướng khi bấm checkbox, tải xuống hoặc menu thao tác nhanh', async () => {
+    mocks.listDocuments.mockResolvedValue([readyDocument]);
+    renderApp();
+
+    await screen.findByText('Báo cáo tuần kỹ thuật');
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Chọn Báo cáo tuần kỹ thuật' }));
+    expect(screen.getByTestId('location')).toHaveTextContent('/');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tải Báo cáo tuần kỹ thuật' }));
+    await waitFor(() => expect(mocks.createDownloadIntent).toHaveBeenCalledWith('document-1'));
+    expect(screen.getByTestId('location')).toHaveTextContent('/');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tùy chọn cho Báo cáo tuần kỹ thuật' }));
+    expect(screen.getByRole('menuitem', { name: 'Chia sẻ' })).toBeInTheDocument();
+    expect(screen.getByTestId('location')).toHaveTextContent('/');
+  });
+
+  it('hiển thị trạng thái đang tải khi tạo liên kết tải xuống', async () => {
+    let resolveDownload!: (value: {
+      downloadUrl: string;
+      expiresAt: string;
+      fileName: string;
+    }) => void;
+    mocks.createDownloadIntent.mockReturnValue(
+      new Promise((resolve) => {
+        resolveDownload = resolve;
+      }),
+    );
+    mocks.listDocuments.mockResolvedValue([readyDocument]);
+    renderApp();
+
+    await screen.findByText('Báo cáo tuần kỹ thuật');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tải Báo cáo tuần kỹ thuật' }));
+
+    const loadingButton = await screen.findByRole('button', {
+      name: 'Đang tải Báo cáo tuần kỹ thuật',
+    });
+    expect(loadingButton).toBeDisabled();
+    expect(loadingButton).toHaveAttribute('title', 'Đang tạo liên kết tải xuống');
+
+    resolveDownload({
+      downloadUrl: 'https://signed.example/download',
+      expiresAt: '2026-06-20T06:35:00.000Z',
+      fileName: 'bao-cao.pdf',
+    });
+  });
+
+  it('chỉ mở một menu thao tác nhanh tại một thời điểm', async () => {
+    mocks.listDocuments.mockResolvedValue([readyDocument, scanningDocument]);
+    renderApp();
+
+    await screen.findByText('Báo cáo tuần kỹ thuật');
+
+    const readyOptions = screen.getByRole('button', {
+      name: 'Tùy chọn cho Báo cáo tuần kỹ thuật',
+    });
+    const scanningOptions = screen.getByRole('button', {
+      name: 'Tùy chọn cho Quy trình toàn công ty',
+    });
+
+    fireEvent.click(readyOptions);
+    expect(screen.getAllByRole('menu')).toHaveLength(1);
+    expect(readyOptions).toHaveAttribute('aria-expanded', 'true');
+
+    fireEvent.click(scanningOptions);
+
+    expect(screen.getAllByRole('menu')).toHaveLength(1);
+    expect(readyOptions).toHaveAttribute('aria-expanded', 'false');
+    expect(scanningOptions).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('đóng menu thao tác nhanh khi bấm ra ngoài', async () => {
+    mocks.listDocuments.mockResolvedValue([readyDocument]);
+    renderApp();
+
+    await screen.findByText('Báo cáo tuần kỹ thuật');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tùy chọn cho Báo cáo tuần kỹ thuật' }));
+    expect(screen.getByRole('menuitem', { name: 'Chia sẻ' })).toBeInTheDocument();
+
+    fireEvent.mouseDown(document.body);
+
+    expect(screen.queryByRole('menuitem', { name: 'Chia sẻ' })).not.toBeInTheDocument();
+  });
+
+  it('đóng menu thao tác nhanh bằng phím Esc', async () => {
+    mocks.listDocuments.mockResolvedValue([readyDocument]);
+    renderApp();
+
+    await screen.findByText('Báo cáo tuần kỹ thuật');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tùy chọn cho Báo cáo tuần kỹ thuật' }));
+    expect(screen.getByRole('menuitem', { name: 'Chia sẻ' })).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(screen.queryByRole('menuitem', { name: 'Chia sẻ' })).not.toBeInTheDocument();
+  });
+
   it('mở modal chia sẻ phòng ban từ menu thao tác nhanh', async () => {
     mocks.listDocuments.mockResolvedValue([readyDocument]);
     renderApp();
@@ -603,6 +721,7 @@ describe('App', () => {
     expect(within(dialog).getByText('Báo cáo tuần kỹ thuật')).toBeInTheDocument();
     expect(screen.getByLabelText('Phòng ban nhận')).toBeInTheDocument();
     expect(screen.queryByRole('option', { name: 'Kỹ thuật' })).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText('Phòng ban nhận')).toHaveFocus());
 
     fireEvent.change(screen.getByLabelText('Phòng ban nhận'), {
       target: { value: 'HR' },
@@ -613,6 +732,21 @@ describe('App', () => {
       expect(mocks.createDepartmentShare).toHaveBeenCalledWith('document-1', 'HR'),
     );
     expect(screen.getByText('Đã chia sẻ tài liệu cho phòng ban đã chọn.')).toBeInTheDocument();
+  });
+
+  it('đóng modal chia sẻ phòng ban bằng phím Esc', async () => {
+    mocks.listDocuments.mockResolvedValue([readyDocument]);
+    renderApp();
+
+    await screen.findByText('Báo cáo tuần kỹ thuật');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tùy chọn cho Báo cáo tuần kỹ thuật' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Chia sẻ' }));
+    expect(screen.getByRole('dialog', { name: 'Chia sẻ phòng ban' })).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(screen.queryByRole('dialog', { name: 'Chia sẻ phòng ban' })).not.toBeInTheDocument();
   });
 
   it('đóng modal chia sẻ phòng ban bằng nút hủy', async () => {
