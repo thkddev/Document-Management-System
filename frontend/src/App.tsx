@@ -19,6 +19,7 @@ import {
   MoreHorizontal,
   RefreshCw,
   Search,
+  Settings,
   Share2,
   ShieldCheck,
   Star,
@@ -60,8 +61,11 @@ type MainView =
   | 'SHARED_DOCUMENTS'
   | 'RECENT_DOCUMENTS'
   | 'BOOKMARKED_DOCUMENTS'
-  | 'DEPARTMENT_DOCUMENTS';
+  | 'DEPARTMENT_DOCUMENTS'
+  | 'ADMIN';
 type NotificationTone = 'INFO' | 'SUCCESS' | 'WARNING' | 'DANGER';
+type AdminRoleFilter = 'ALL' | 'SYSTEM_ADMIN' | 'DEPARTMENT_ADMIN' | 'EMPLOYEE';
+type AdminRole = Exclude<AdminRoleFilter, 'ALL'>;
 
 interface AppNotification {
   id: string;
@@ -93,6 +97,16 @@ interface DashboardActivity {
   time: string;
   action: string;
   target: string;
+}
+
+interface AdminUserRow {
+  id: string;
+  name: string;
+  email: string;
+  departmentId: DepartmentId;
+  roles: AdminRole[];
+  status: 'ACTIVE' | 'LOCKED';
+  updatedAt: string;
 }
 
 export const classificationLabels: Record<DocumentSummary['classification'], Classification> = {
@@ -224,6 +238,62 @@ export const departmentOptions = [
 type DepartmentId = (typeof departmentOptions)[number]['id'];
 
 const defaultDepartmentCounts: Record<DepartmentId, number> = { HR: 0, TECH: 0, SA: 0 };
+
+function departmentLabelFor(departmentId: DepartmentId): string {
+  return departmentOptions.find((department) => department.id === departmentId)?.label ?? departmentId;
+}
+
+const adminRoleLabels: Record<AdminRole, string> = {
+  SYSTEM_ADMIN: 'System Admin',
+  DEPARTMENT_ADMIN: 'Department Admin',
+  EMPLOYEE: 'Nhân viên',
+};
+
+const adminRoleFilters: Array<{ value: AdminRoleFilter; label: string }> = [
+  { value: 'ALL', label: 'Tất cả vai trò' },
+  { value: 'SYSTEM_ADMIN', label: 'System Admin' },
+  { value: 'DEPARTMENT_ADMIN', label: 'Department Admin' },
+  { value: 'EMPLOYEE', label: 'Nhân viên' },
+];
+
+const adminUsers: AdminUserRow[] = [
+  {
+    id: 'user-admin-duy',
+    name: 'Duy Admin',
+    email: 'thkd811@gmail.com',
+    departmentId: 'TECH',
+    roles: ['SYSTEM_ADMIN', 'EMPLOYEE'],
+    status: 'ACTIVE',
+    updatedAt: '2026-06-29T08:30:00.000Z',
+  },
+  {
+    id: 'user-han-hr',
+    name: 'Han HR',
+    email: 'hanlap0908@gmail.com',
+    departmentId: 'HR',
+    roles: ['EMPLOYEE'],
+    status: 'ACTIVE',
+    updatedAt: '2026-06-29T08:35:00.000Z',
+  },
+  {
+    id: 'user-hr-admin',
+    name: 'Nguyễn An',
+    email: 'admin.hr@example.com',
+    departmentId: 'HR',
+    roles: ['DEPARTMENT_ADMIN', 'EMPLOYEE'],
+    status: 'ACTIVE',
+    updatedAt: '2026-06-28T15:10:00.000Z',
+  },
+  {
+    id: 'user-sa-staff',
+    name: 'Lê Hà',
+    email: 'sale@example.com',
+    departmentId: 'SA',
+    roles: ['EMPLOYEE'],
+    status: 'LOCKED',
+    updatedAt: '2026-06-27T10:45:00.000Z',
+  },
+];
 
 const uploadClassifications: Array<{ value: DocumentClassification; label: string }> = [
   { value: 'INTERNAL', label: 'Nội bộ' },
@@ -385,6 +455,7 @@ export function NavContent({
   sharedCount = 0,
   storageUsedBytes = 0,
   storageQuotaBytes = 50 * 1024 ** 3,
+  canManageSystem = false,
   onLogout,
 }: {
   onNavigate?: () => void;
@@ -398,6 +469,7 @@ export function NavContent({
   sharedCount?: number;
   storageUsedBytes?: number;
   storageQuotaBytes?: number;
+  canManageSystem?: boolean;
   onLogout: () => void;
 }) {
   const initials = toInitials(displayName);
@@ -442,6 +514,25 @@ export function NavContent({
             </li>
           ))}
         </ul>
+        {canManageSystem && (
+          <>
+            <p className="nav-eyebrow nav-eyebrow--admin">Hệ thống</p>
+            <ul className="nav-list">
+              <li>
+                <button
+                  className={activeView === 'ADMIN' ? 'nav-link is-active' : 'nav-link'}
+                  onClick={() => {
+                    onViewChange?.('ADMIN');
+                    onNavigate?.();
+                  }}
+                >
+                  <Settings size={18} strokeWidth={1.7} />
+                  <span>Quản trị</span>
+                </button>
+              </li>
+            </ul>
+          </>
+        )}
       </nav>
 
       <div className="cabinet-section">
@@ -507,6 +598,9 @@ export function App() {
   const [documentSort, setDocumentSort] = useState<DocumentSort>('UPDATED_DESC');
   const [pageSize, setPageSize] = useState<(typeof documentPageSizeOptions)[number]>(10);
   const [currentPage, setCurrentPage] = useState(1);
+  const [adminQuery, setAdminQuery] = useState('');
+  const [adminDepartmentFilter, setAdminDepartmentFilter] = useState<'ALL' | DepartmentId>('ALL');
+  const [adminRoleFilter, setAdminRoleFilter] = useState<AdminRoleFilter>('ALL');
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploadTitle, setUploadTitle] = useState('');
@@ -554,6 +648,7 @@ export function App() {
   const displayName = currentUser?.displayName ?? '';
   const departmentId = currentUser?.departmentId ?? '';
   const canPublishToAllEmployees = currentUser?.roles.includes('SYSTEM_ADMIN') ?? false;
+  const canManageSystem = currentUser?.roles.includes('SYSTEM_ADMIN') ?? false;
   const canReviewShareRequests =
     currentUser?.roles.some((role) => role === 'DEPARTMENT_ADMIN' || role === 'SYSTEM_ADMIN') ??
     false;
@@ -563,6 +658,7 @@ export function App() {
   const isRecentView = activeView === 'RECENT_DOCUMENTS';
   const isBookmarkedView = activeView === 'BOOKMARKED_DOCUMENTS';
   const isDepartmentView = activeView === 'DEPARTMENT_DOCUMENTS';
+  const isAdminView = activeView === 'ADMIN';
   const selectedDepartmentLabel =
     departmentOptions.find((department) => department.id === selectedDepartmentId)?.label ??
     'phòng ban';
@@ -575,7 +671,11 @@ export function App() {
         : isDepartmentView
           ? `Đang xem tài liệu phòng ${selectedDepartmentLabel}`
           : 'Đang xem tất cả tài liệu';
-  const pageKicker = isOverviewView ? 'Thứ sáu · 19 tháng 6' : 'Kho tài liệu';
+  const pageKicker = isOverviewView
+    ? 'Thứ sáu · 19 tháng 6'
+    : isAdminView
+      ? 'Quản trị'
+      : 'Kho tài liệu';
   const pageTitle = isOverviewView
     ? 'Tài liệu cần bạn chú ý'
     : isSharedView
@@ -584,6 +684,8 @@ export function App() {
         ? 'Gần đây'
         : isBookmarkedView
           ? 'Đã đánh dấu'
+          : isAdminView
+            ? 'Quản trị hệ thống'
           : isDepartmentView
             ? `Tài liệu phòng ${selectedDepartmentLabel}`
           : 'Tất cả tài liệu';
@@ -595,6 +697,8 @@ export function App() {
         ? 'Các tài liệu vừa được cập nhật, kiểm tra hoặc xử lý gần đây.'
         : isBookmarkedView
           ? 'Các tài liệu bạn đã lưu lại để truy cập nhanh.'
+          : isAdminView
+            ? 'Theo dõi người dùng, phòng ban và vai trò. Thao tác thật với Cognito sẽ được nối ở P7.2.'
           : isDepartmentView
             ? `Danh sách tài liệu thuộc phòng ${selectedDepartmentLabel}.`
           : 'Danh sách tài liệu thật với bộ lọc, sắp xếp và phân trang tập trung.';
@@ -637,6 +741,28 @@ export function App() {
   const sharedDocumentCount = documentSummaries.filter((document) =>
     isSharedDocument(document, departmentId),
   ).length;
+  const filteredAdminUsers = useMemo(() => {
+    const normalized = adminQuery.trim().toLocaleLowerCase('vi');
+    return adminUsers.filter(
+      (user) =>
+        (!normalized ||
+          [user.name, user.email, user.departmentId, ...user.roles.map((role) => adminRoleLabels[role])]
+            .join(' ')
+            .toLocaleLowerCase('vi')
+            .includes(normalized)) &&
+        (adminDepartmentFilter === 'ALL' || user.departmentId === adminDepartmentFilter) &&
+        (adminRoleFilter === 'ALL' || user.roles.includes(adminRoleFilter)),
+    );
+  }, [adminDepartmentFilter, adminQuery, adminRoleFilter]);
+  const adminStats = useMemo(
+    () => ({
+      total: adminUsers.length,
+      systemAdmins: adminUsers.filter((user) => user.roles.includes('SYSTEM_ADMIN')).length,
+      departmentAdmins: adminUsers.filter((user) => user.roles.includes('DEPARTMENT_ADMIN')).length,
+      employees: adminUsers.filter((user) => user.roles.includes('EMPLOYEE')).length,
+    }),
+    [],
+  );
   const storageUsedBytes = documentSummaries.reduce(
     (total, document) => total + document.sizeBytes,
     0,
@@ -706,6 +832,12 @@ export function App() {
       setUploadAccessScope('DEPARTMENT');
     }
   }, [canPublishToAllEmployees, uploadAccessScope]);
+
+  useEffect(() => {
+    if (!canManageSystem && activeView === 'ADMIN') {
+      setActiveView('OVERVIEW');
+    }
+  }, [activeView, canManageSystem]);
 
   useEffect(() => {
     if (activeView === 'RECENT_DOCUMENTS' && documentSort !== 'UPDATED_DESC') {
@@ -1200,6 +1332,7 @@ export function App() {
           sharedCount={sharedDocumentCount}
           storageUsedBytes={storageUsedBytes}
           storageQuotaBytes={storageQuotaBytes}
+          canManageSystem={canManageSystem}
           onLogout={logout}
         />
       </aside>
@@ -1230,6 +1363,7 @@ export function App() {
               sharedCount={sharedDocumentCount}
               storageUsedBytes={storageUsedBytes}
               storageQuotaBytes={storageQuotaBytes}
+              canManageSystem={canManageSystem}
               onLogout={() => {
                 logout();
                 setMobileNavOpen(false);
@@ -1330,16 +1464,18 @@ export function App() {
               <h1 id="page-title">{pageTitle}</h1>
               <p>{pageDescription}</p>
             </div>
-            <button
-              className="primary-action"
-              onClick={() => {
-                handleViewChange('OVERVIEW');
-                setUploadOpen((open) => !open);
-              }}
-            >
-              <FilePlus2 size={18} />
-              Tải tài liệu lên
-            </button>
+            {!isAdminView && (
+              <button
+                className="primary-action"
+                onClick={() => {
+                  handleViewChange('OVERVIEW');
+                  setUploadOpen((open) => !open);
+                }}
+              >
+                <FilePlus2 size={18} />
+                Tải tài liệu lên
+              </button>
+            )}
           </div>
 
           {isOverviewView && uploadOpen && (
@@ -1414,6 +1550,133 @@ export function App() {
             </section>
           )}
 
+          {isAdminView && canManageSystem && (
+            <section className="admin-panel" aria-labelledby="admin-heading">
+              <div className="admin-toolbar">
+                <div>
+                  <p className="section-kicker">Tổng quan tài khoản</p>
+                  <h2 id="admin-heading">Người dùng nội bộ</h2>
+                </div>
+                <button className="primary-action" type="button" disabled title="Sẽ kết nối AWS Cognito ở P7.2">
+                  <FilePlus2 size={18} />
+                  Tạo người dùng
+                </button>
+              </div>
+
+              <div className="admin-summary-grid">
+                <div className="admin-summary-card">
+                  <span>Tổng người dùng</span>
+                  <strong>{adminStats.total}</strong>
+                </div>
+                <div className="admin-summary-card">
+                  <span>System Admin</span>
+                  <strong>{adminStats.systemAdmins}</strong>
+                </div>
+                <div className="admin-summary-card">
+                  <span>Department Admin</span>
+                  <strong>{adminStats.departmentAdmins}</strong>
+                </div>
+                <div className="admin-summary-card">
+                  <span>Nhân viên</span>
+                  <strong>{adminStats.employees}</strong>
+                </div>
+              </div>
+
+              <div className="admin-placeholder-note">
+                <ShieldCheck size={17} />
+                <span>
+                  Dữ liệu bên dưới là bản minh họa frontend. Tạo user, đổi vai trò và khóa tài khoản
+                  sẽ kết nối AWS Cognito ở P7.2.
+                </span>
+              </div>
+
+              <div className="admin-filters" aria-label="Bộ lọc người dùng">
+                <label>
+                  <span>Tìm kiếm</span>
+                  <input
+                    value={adminQuery}
+                    onChange={(event) => setAdminQuery(event.target.value)}
+                    placeholder="Tên hoặc email"
+                  />
+                </label>
+                <label>
+                  <span>Phòng ban</span>
+                  <select
+                    value={adminDepartmentFilter}
+                    onChange={(event) =>
+                      setAdminDepartmentFilter(event.target.value as 'ALL' | DepartmentId)
+                    }
+                  >
+                    <option value="ALL">Tất cả phòng ban</option>
+                    {departmentOptions.map((department) => (
+                      <option key={department.id} value={department.id}>
+                        {department.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>Vai trò</span>
+                  <select
+                    value={adminRoleFilter}
+                    onChange={(event) => setAdminRoleFilter(event.target.value as AdminRoleFilter)}
+                  >
+                    {adminRoleFilters.map((role) => (
+                      <option key={role.value} value={role.value}>
+                        {role.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <div className="admin-user-table" role="table" aria-label="Danh sách người dùng">
+                <div className="admin-user-row admin-user-row--header" role="row">
+                  <span role="columnheader">Người dùng</span>
+                  <span role="columnheader">Phòng ban</span>
+                  <span role="columnheader">Vai trò</span>
+                  <span role="columnheader">Trạng thái</span>
+                  <span role="columnheader">Thao tác</span>
+                </div>
+                {filteredAdminUsers.map((user) => (
+                  <div className="admin-user-row" role="row" key={user.id}>
+                    <div className="admin-user-identity" role="cell">
+                      <strong>{user.name}</strong>
+                      <span>{user.email}</span>
+                      <small>Cập nhật {formatUpdatedAt(user.updatedAt)}</small>
+                    </div>
+                    <span role="cell">{departmentLabelFor(user.departmentId)}</span>
+                    <div className="admin-role-list" role="cell">
+                      {user.roles.map((role) => (
+                        <span className="admin-role-badge" key={role}>
+                          {adminRoleLabels[role]}
+                        </span>
+                      ))}
+                    </div>
+                    <span className={`admin-status admin-status--${user.status.toLowerCase()}`} role="cell">
+                      {user.status === 'ACTIVE' ? 'Đang hoạt động' : 'Đã khóa'}
+                    </span>
+                    <div className="admin-actions" role="cell">
+                      <button className="quiet-button" type="button" disabled title="Sẽ kết nối AWS Cognito ở P7.2">
+                        Đổi vai trò
+                      </button>
+                      <button className="quiet-button quiet-button--danger" type="button" disabled title="Sẽ kết nối AWS Cognito ở P7.2">
+                        Khóa tài khoản
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                {filteredAdminUsers.length === 0 && (
+                  <div className="empty-state">
+                    <Users size={28} />
+                    <h3>Không tìm thấy người dùng</h3>
+                    <p>Thử đổi từ khóa, phòng ban hoặc vai trò.</p>
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
+
           {isOverviewView && (
           <div className="attention-strip">
             <div className="attention-number">
@@ -1441,6 +1704,7 @@ export function App() {
           </div>
           )}
 
+          {!isAdminView && (
           <div className={isOverviewView ? 'content-grid' : 'content-grid content-grid--single'}>
             <section className="document-panel" aria-labelledby="recent-heading">
               <div className="panel-heading">
@@ -2059,6 +2323,7 @@ export function App() {
             </aside>
             )}
           </div>
+          )}
 
           {shareDialogDocument && (
             <div

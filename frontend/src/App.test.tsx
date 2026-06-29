@@ -181,6 +181,66 @@ describe('App', () => {
     expect(screen.getByText(/Cập nhật lần cuối/)).toBeInTheDocument();
   });
 
+  it('ẩn mục quản trị với nhân viên thường', async () => {
+    renderApp();
+
+    await screen.findByText('Báo cáo tuần kỹ thuật');
+
+    expect(screen.queryByRole('button', { name: 'Quản trị' })).not.toBeInTheDocument();
+  });
+
+  it('hiển thị trang quản trị hệ thống cho System Admin', async () => {
+    mocks.currentUser = {
+      ...mocks.currentUser,
+      roles: ['SYSTEM_ADMIN'],
+      displayName: 'Duy Admin',
+    };
+    renderApp();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Quản trị' }));
+
+    expect(screen.getByRole('heading', { name: 'Quản trị hệ thống' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Người dùng nội bộ' })).toBeInTheDocument();
+    expect(screen.getByText('thkd811@gmail.com')).toBeInTheDocument();
+    expect(screen.getByText('hanlap0908@gmail.com')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Tải tài liệu lên' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Tạo người dùng' })).toBeDisabled();
+    expect(screen.getAllByText(/P7\.2/).length).toBeGreaterThan(0);
+  });
+
+  it('lọc người dùng quản trị theo từ khóa, phòng ban và vai trò', async () => {
+    mocks.currentUser = {
+      ...mocks.currentUser,
+      roles: ['SYSTEM_ADMIN'],
+      displayName: 'Duy Admin',
+    };
+    renderApp();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Quản trị' }));
+
+    fireEvent.change(screen.getByPlaceholderText('Tên hoặc email'), {
+      target: { value: 'han' },
+    });
+    expect(screen.getByText('hanlap0908@gmail.com')).toBeInTheDocument();
+    expect(screen.queryByText('thkd811@gmail.com')).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText('Tên hoặc email'), {
+      target: { value: '' },
+    });
+    fireEvent.change(screen.getByLabelText('Phòng ban'), {
+      target: { value: 'HR' },
+    });
+    expect(screen.getByText('hanlap0908@gmail.com')).toBeInTheDocument();
+    expect(screen.getByText('admin.hr@example.com')).toBeInTheDocument();
+    expect(screen.queryByText('sale@example.com')).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Vai trò'), {
+      target: { value: 'DEPARTMENT_ADMIN' },
+    });
+    expect(screen.getByText('admin.hr@example.com')).toBeInTheDocument();
+    expect(screen.queryByText('hanlap0908@gmail.com')).not.toBeInTheDocument();
+  });
+
   it('làm mới danh sách tài liệu thủ công', async () => {
     mocks.listDocuments
       .mockResolvedValueOnce([readyDocument])
