@@ -110,6 +110,35 @@ describe('DmsStack', () => {
     });
   });
 
+  it('cấu hình route quản trị người dùng đọc Cognito cho System Admin', () => {
+    const template = synthesizeTemplate();
+
+    template.hasResourceProperties('AWS::Lambda::Function', {
+      Handler: 'handlers/admin-users.handler',
+      Runtime: 'nodejs22.x',
+      Environment: {
+        Variables: Match.objectLike({ USER_POOL_ID: Match.anyValue() }),
+      },
+    });
+    template.hasResourceProperties('AWS::ApiGateway::Method', {
+      HttpMethod: 'GET',
+      AuthorizationType: 'COGNITO_USER_POOLS',
+    });
+    template.hasResourceProperties('AWS::IAM::Policy', {
+      PolicyDocument: {
+        Statement: Match.arrayWith([
+          Match.objectLike({
+            Action: Match.arrayWith([
+              'cognito-idp:ListUsers',
+              'cognito-idp:AdminListGroupsForUser',
+            ]),
+            Effect: 'Allow',
+          }),
+        ]),
+      },
+    });
+  });
+
   it('cấu hình route chi tiết tài liệu và download intent bằng Cognito', () => {
     const template = synthesizeTemplate();
 

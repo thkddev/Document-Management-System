@@ -10,6 +10,22 @@ export interface CurrentUser {
   roles: UserRole[];
 }
 
+export interface AdminUserSummary {
+  id: string;
+  name: string;
+  email: string;
+  departmentId: string;
+  roles: UserRole[];
+  status: string;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ListAdminUsersResponse {
+  items: AdminUserSummary[];
+}
+
 export const documentClassifications = [
   'PUBLIC',
   'INTERNAL',

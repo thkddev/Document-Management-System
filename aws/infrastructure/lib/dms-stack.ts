@@ -233,6 +233,31 @@ export class DmsStack extends cdk.Stack {
     });
     table.grantReadData(documentAuditEventsFunction);
 
+    const adminUsersFunction = new lambda.Function(this, 'AdminUsersFunction', {
+      code: lambda.Code.fromAsset(path.join(currentDirectory, '../../functions/dist')),
+      handler: 'handlers/admin-users.handler',
+      runtime: lambda.Runtime.NODEJS_22_X,
+      architecture: lambda.Architecture.ARM_64,
+      memorySize: 256,
+      timeout: cdk.Duration.seconds(15),
+      tracing: lambda.Tracing.ACTIVE,
+      logGroup: new logs.LogGroup(this, 'AdminUsersFunctionLogs', {
+        retention: isProduction ? logs.RetentionDays.THREE_MONTHS : logs.RetentionDays.TWO_WEEKS,
+        removalPolicy,
+      }),
+      environment: {
+        USER_POOL_ID: userPool.userPoolId,
+        ENVIRONMENT_NAME: props.environmentName,
+        CORS_ALLOW_ORIGIN: corsAllowOrigin,
+      },
+    });
+    adminUsersFunction.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['cognito-idp:ListUsers', 'cognito-idp:AdminListGroupsForUser'],
+        resources: [userPool.userPoolArn],
+      }),
+    );
+
     const downloadIntentFunction = new lambda.Function(this, 'DownloadIntentFunction', {
       code: lambda.Code.fromAsset(path.join(currentDirectory, '../../functions/dist')),
       handler: 'handlers/download-intents.handler',
@@ -556,6 +581,14 @@ export class DmsStack extends cdk.Stack {
       authorizer,
       authorizationType: apigateway.AuthorizationType.COGNITO,
     });
+
+    api.root
+      .addResource('admin')
+      .addResource('users')
+      .addMethod('GET', new apigateway.LambdaIntegration(adminUsersFunction), {
+        authorizer,
+        authorizationType: apigateway.AuthorizationType.COGNITO,
+      });
 
     const documentsResource = api.root.addResource('documents');
     documentsResource.addMethod('GET', new apigateway.LambdaIntegration(documentsFunction), {

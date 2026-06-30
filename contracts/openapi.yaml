@@ -22,6 +22,27 @@ paths:
                 $ref: '#/components/schemas/CurrentUser'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /admin/users:
+    get:
+      operationId: listAdminUsers
+      summary: Liệt kê người dùng Cognito cho System Admin
+      responses:
+        '200':
+          description: Danh sách người dùng nội bộ
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AdminUserSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /documents:
     get:
       operationId: listDocuments
@@ -311,6 +332,35 @@ components:
           items:
             type: string
             enum: [EMPLOYEE, DEPARTMENT_ADMIN, SYSTEM_ADMIN]
+    AdminUserSummary:
+      type: object
+      required: [id, name, email, departmentId, roles, status, enabled, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        departmentId:
+          type: string
+        roles:
+          type: array
+          items:
+            type: string
+            enum: [EMPLOYEE, DEPARTMENT_ADMIN, SYSTEM_ADMIN]
+        status:
+          type: string
+          description: Trạng thái Cognito như CONFIRMED hoặc FORCE_CHANGE_PASSWORD.
+        enabled:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
     DocumentSummary:
       type: object
       required:

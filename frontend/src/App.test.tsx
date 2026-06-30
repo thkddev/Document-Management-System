@@ -4,6 +4,7 @@ import { MemoryRouter, useLocation } from 'react-router-dom';
 import { App } from './App';
 
 const mocks = vi.hoisted(() => ({
+  listAdminUsers: vi.fn(),
   listDocuments: vi.fn(),
   listPendingShareRequests: vi.fn(),
   approveShareRequest: vi.fn(),
@@ -34,6 +35,10 @@ vi.mock('./lib/uploads', () => ({
   calculateSha256: vi.fn(),
   createUploadIntent: vi.fn(),
   uploadFileToSignedUrl: vi.fn(),
+}));
+
+vi.mock('./lib/admin-users', () => ({
+  listAdminUsers: mocks.listAdminUsers,
 }));
 
 vi.mock('./lib/documents', async (importOriginal) => ({
@@ -125,6 +130,53 @@ const pendingShareRequests = [
   },
 ];
 
+const adminUsers = [
+  {
+    id: 'user-admin-duy',
+    name: 'Duy Admin',
+    email: 'thkd811@gmail.com',
+    departmentId: 'TECH',
+    roles: ['SYSTEM_ADMIN', 'EMPLOYEE'],
+    status: 'CONFIRMED',
+    enabled: true,
+    createdAt: '2026-06-29T08:30:00.000Z',
+    updatedAt: '2026-06-29T08:30:00.000Z',
+  },
+  {
+    id: 'user-han-hr',
+    name: 'Han HR',
+    email: 'hanlap0908@gmail.com',
+    departmentId: 'HR',
+    roles: ['EMPLOYEE'],
+    status: 'CONFIRMED',
+    enabled: true,
+    createdAt: '2026-06-29T08:35:00.000Z',
+    updatedAt: '2026-06-29T08:35:00.000Z',
+  },
+  {
+    id: 'user-hr-admin',
+    name: 'Nguyễn An',
+    email: 'admin.hr@example.com',
+    departmentId: 'HR',
+    roles: ['DEPARTMENT_ADMIN', 'EMPLOYEE'],
+    status: 'CONFIRMED',
+    enabled: true,
+    createdAt: '2026-06-28T15:10:00.000Z',
+    updatedAt: '2026-06-28T15:10:00.000Z',
+  },
+  {
+    id: 'user-sa-staff',
+    name: 'Lê Hà',
+    email: 'sale@example.com',
+    departmentId: 'SA',
+    roles: ['EMPLOYEE'],
+    status: 'CONFIRMED',
+    enabled: false,
+    createdAt: '2026-06-27T10:45:00.000Z',
+    updatedAt: '2026-06-27T10:45:00.000Z',
+  },
+];
+
 describe('App', () => {
   function LocationProbe() {
     const location = useLocation();
@@ -139,6 +191,7 @@ describe('App', () => {
       departmentId: 'TECH',
       roles: ['EMPLOYEE'],
     };
+    mocks.listAdminUsers.mockReset();
     mocks.listDocuments.mockReset();
     mocks.listPendingShareRequests.mockReset();
     mocks.approveShareRequest.mockReset();
@@ -146,6 +199,7 @@ describe('App', () => {
     mocks.createDepartmentShare.mockReset();
     mocks.createDownloadIntent.mockReset();
     mocks.triggerBrowserDownload.mockReset();
+    mocks.listAdminUsers.mockResolvedValue(adminUsers);
     mocks.listDocuments.mockResolvedValue([readyDocument]);
     mocks.listPendingShareRequests.mockResolvedValue([]);
     mocks.approveShareRequest.mockResolvedValue({ shareRequestId: 'share-request-1', status: 'APPROVED' });
@@ -201,11 +255,13 @@ describe('App', () => {
 
     expect(screen.getByRole('heading', { name: 'Quản trị hệ thống' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Người dùng nội bộ' })).toBeInTheDocument();
-    expect(screen.getByText('thkd811@gmail.com')).toBeInTheDocument();
+    await waitFor(() => expect(mocks.listAdminUsers).toHaveBeenCalled());
+    expect(await screen.findByText('thkd811@gmail.com')).toBeInTheDocument();
     expect(screen.getByText('hanlap0908@gmail.com')).toBeInTheDocument();
+    expect(mocks.listAdminUsers).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole('button', { name: 'Tải tài liệu lên' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Tạo người dùng' })).toBeDisabled();
-    expect(screen.getAllByText(/P7\.2/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/được đọc trực tiếp từ AWS Cognito/)).toBeInTheDocument();
   });
 
   it('lọc người dùng quản trị theo từ khóa, phòng ban và vai trò', async () => {
@@ -217,6 +273,8 @@ describe('App', () => {
     renderApp();
 
     fireEvent.click(screen.getByRole('button', { name: 'Quản trị' }));
+    await waitFor(() => expect(mocks.listAdminUsers).toHaveBeenCalled());
+    await screen.findByText('thkd811@gmail.com');
 
     fireEvent.change(screen.getByPlaceholderText('Tên hoặc email'), {
       target: { value: 'han' },
@@ -239,6 +297,23 @@ describe('App', () => {
     });
     expect(screen.getByText('admin.hr@example.com')).toBeInTheDocument();
     expect(screen.queryByText('hanlap0908@gmail.com')).not.toBeInTheDocument();
+  });
+
+  it('hiển thị lỗi khi không tải được người dùng quản trị từ Cognito', async () => {
+    mocks.currentUser = {
+      ...mocks.currentUser,
+      roles: ['SYSTEM_ADMIN'],
+      displayName: 'Duy Admin',
+    };
+    mocks.listAdminUsers.mockRejectedValue(new Error('fail'));
+    renderApp();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Quản trị' }));
+
+    expect(
+      await screen.findByText('Không thể tải danh sách người dùng từ Cognito. Vui lòng thử lại.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('thkd811@gmail.com')).not.toBeInTheDocument();
   });
 
   it('làm mới danh sách tài liệu thủ công', async () => {

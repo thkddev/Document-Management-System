@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from './features/auth/AuthContext';
+import { listAdminUsers, type AdminUserRole, type AdminUserSummary } from './lib/admin-users';
 import {
   createDepartmentShare,
   createDownloadIntent as requestDownloadIntent,
@@ -65,7 +66,7 @@ type MainView =
   | 'ADMIN';
 type NotificationTone = 'INFO' | 'SUCCESS' | 'WARNING' | 'DANGER';
 type AdminRoleFilter = 'ALL' | 'SYSTEM_ADMIN' | 'DEPARTMENT_ADMIN' | 'EMPLOYEE';
-type AdminRole = Exclude<AdminRoleFilter, 'ALL'>;
+type AdminRole = AdminUserRole;
 
 interface AppNotification {
   id: string;
@@ -103,9 +104,10 @@ interface AdminUserRow {
   id: string;
   name: string;
   email: string;
-  departmentId: DepartmentId;
+  departmentId: string;
   roles: AdminRole[];
-  status: 'ACTIVE' | 'LOCKED';
+  status: string;
+  enabled: boolean;
   updatedAt: string;
 }
 
@@ -221,6 +223,19 @@ function toDocumentItem(document: DocumentSummary): DocumentItem {
   return item;
 }
 
+function toAdminUserRow(user: AdminUserSummary): AdminUserRow {
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    departmentId: user.departmentId,
+    roles: user.roles,
+    status: user.status,
+    enabled: user.enabled,
+    updatedAt: user.updatedAt || user.createdAt,
+  };
+}
+
 const navItems = [
   { label: 'Tổng quan', icon: FolderKanban, view: 'OVERVIEW' as MainView },
   { label: 'Tất cả tài liệu', icon: Files, view: 'ALL_DOCUMENTS' as MainView },
@@ -239,7 +254,7 @@ type DepartmentId = (typeof departmentOptions)[number]['id'];
 
 const defaultDepartmentCounts: Record<DepartmentId, number> = { HR: 0, TECH: 0, SA: 0 };
 
-function departmentLabelFor(departmentId: DepartmentId): string {
+function departmentLabelFor(departmentId: string): string {
   return departmentOptions.find((department) => department.id === departmentId)?.label ?? departmentId;
 }
 
@@ -254,45 +269,6 @@ const adminRoleFilters: Array<{ value: AdminRoleFilter; label: string }> = [
   { value: 'SYSTEM_ADMIN', label: 'System Admin' },
   { value: 'DEPARTMENT_ADMIN', label: 'Department Admin' },
   { value: 'EMPLOYEE', label: 'Nhân viên' },
-];
-
-const adminUsers: AdminUserRow[] = [
-  {
-    id: 'user-admin-duy',
-    name: 'Duy Admin',
-    email: 'thkd811@gmail.com',
-    departmentId: 'TECH',
-    roles: ['SYSTEM_ADMIN', 'EMPLOYEE'],
-    status: 'ACTIVE',
-    updatedAt: '2026-06-29T08:30:00.000Z',
-  },
-  {
-    id: 'user-han-hr',
-    name: 'Han HR',
-    email: 'hanlap0908@gmail.com',
-    departmentId: 'HR',
-    roles: ['EMPLOYEE'],
-    status: 'ACTIVE',
-    updatedAt: '2026-06-29T08:35:00.000Z',
-  },
-  {
-    id: 'user-hr-admin',
-    name: 'Nguyễn An',
-    email: 'admin.hr@example.com',
-    departmentId: 'HR',
-    roles: ['DEPARTMENT_ADMIN', 'EMPLOYEE'],
-    status: 'ACTIVE',
-    updatedAt: '2026-06-28T15:10:00.000Z',
-  },
-  {
-    id: 'user-sa-staff',
-    name: 'Lê Hà',
-    email: 'sale@example.com',
-    departmentId: 'SA',
-    roles: ['EMPLOYEE'],
-    status: 'LOCKED',
-    updatedAt: '2026-06-27T10:45:00.000Z',
-  },
 ];
 
 const uploadClassifications: Array<{ value: DocumentClassification; label: string }> = [
@@ -598,6 +574,9 @@ export function App() {
   const [documentSort, setDocumentSort] = useState<DocumentSort>('UPDATED_DESC');
   const [pageSize, setPageSize] = useState<(typeof documentPageSizeOptions)[number]>(10);
   const [currentPage, setCurrentPage] = useState(1);
+  const [adminUsers, setAdminUsers] = useState<AdminUserRow[]>([]);
+  const [adminUsersLoading, setAdminUsersLoading] = useState(false);
+  const [adminUsersError, setAdminUsersError] = useState('');
   const [adminQuery, setAdminQuery] = useState('');
   const [adminDepartmentFilter, setAdminDepartmentFilter] = useState<'ALL' | DepartmentId>('ALL');
   const [adminRoleFilter, setAdminRoleFilter] = useState<AdminRoleFilter>('ALL');
@@ -698,7 +677,7 @@ export function App() {
         : isBookmarkedView
           ? 'Các tài liệu bạn đã lưu lại để truy cập nhanh.'
           : isAdminView
-            ? 'Theo dõi người dùng, phòng ban và vai trò. Thao tác thật với Cognito sẽ được nối ở P7.2.'
+            ? 'Theo dõi người dùng, phòng ban và vai trò từ AWS Cognito.'
           : isDepartmentView
             ? `Danh sách tài liệu thuộc phòng ${selectedDepartmentLabel}.`
           : 'Danh sách tài liệu thật với bộ lọc, sắp xếp và phân trang tập trung.';
@@ -753,7 +732,7 @@ export function App() {
         (adminDepartmentFilter === 'ALL' || user.departmentId === adminDepartmentFilter) &&
         (adminRoleFilter === 'ALL' || user.roles.includes(adminRoleFilter)),
     );
-  }, [adminDepartmentFilter, adminQuery, adminRoleFilter]);
+  }, [adminDepartmentFilter, adminQuery, adminRoleFilter, adminUsers]);
   const adminStats = useMemo(
     () => ({
       total: adminUsers.length,
@@ -761,7 +740,7 @@ export function App() {
       departmentAdmins: adminUsers.filter((user) => user.roles.includes('DEPARTMENT_ADMIN')).length,
       employees: adminUsers.filter((user) => user.roles.includes('EMPLOYEE')).length,
     }),
-    [],
+    [adminUsers],
   );
   const storageUsedBytes = documentSummaries.reduce(
     (total, document) => total + document.sizeBytes,
@@ -798,9 +777,34 @@ export function App() {
     }
   }, []);
 
+  const refreshAdminUsers = useCallback(async (): Promise<void> => {
+    if (!canManageSystem) {
+      setAdminUsers([]);
+      setAdminUsersError('');
+      return;
+    }
+
+    setAdminUsersLoading(true);
+    try {
+      const items = await listAdminUsers();
+      setAdminUsers(items.map(toAdminUserRow));
+      setAdminUsersError('');
+    } catch {
+      setAdminUsersError('Không thể tải danh sách người dùng từ Cognito. Vui lòng thử lại.');
+    } finally {
+      setAdminUsersLoading(false);
+    }
+  }, [canManageSystem]);
+
   useEffect(() => {
     void refreshDocuments(true);
   }, [refreshDocuments]);
+
+  useEffect(() => {
+    if (isAdminView && canManageSystem) {
+      void refreshAdminUsers();
+    }
+  }, [canManageSystem, isAdminView, refreshAdminUsers]);
 
   useEffect(() => {
     if (!hasProcessingDocuments(documentSummaries)) return;
@@ -1561,6 +1565,15 @@ export function App() {
                   <FilePlus2 size={18} />
                   Tạo người dùng
                 </button>
+                <button
+                  className="quiet-button"
+                  type="button"
+                  disabled={adminUsersLoading}
+                  onClick={() => void refreshAdminUsers()}
+                >
+                  <RefreshCw size={16} />
+                  {adminUsersLoading ? 'Đang làm mới' : 'Làm mới'}
+                </button>
               </div>
 
               <div className="admin-summary-grid">
@@ -1585,10 +1598,20 @@ export function App() {
               <div className="admin-placeholder-note">
                 <ShieldCheck size={17} />
                 <span>
-                  Dữ liệu bên dưới là bản minh họa frontend. Tạo user, đổi vai trò và khóa tài khoản
-                  sẽ kết nối AWS Cognito ở P7.2.
+                  Dữ liệu người dùng được đọc trực tiếp từ AWS Cognito. Tạo user, đổi vai trò và khóa tài khoản
+                  sẽ được triển khai ở P7.3.
                 </span>
               </div>
+              {adminUsersError && (
+                <p className="document-load-error" role="alert">
+                  {adminUsersError}
+                </p>
+              )}
+              {adminUsersLoading && (
+                <p className="document-view-context" role="status">
+                  Đang tải danh sách người dùng từ Cognito...
+                </p>
+              )}
 
               <div className="admin-filters" aria-label="Bộ lọc người dùng">
                 <label>
@@ -1653,8 +1676,12 @@ export function App() {
                         </span>
                       ))}
                     </div>
-                    <span className={`admin-status admin-status--${user.status.toLowerCase()}`} role="cell">
-                      {user.status === 'ACTIVE' ? 'Đang hoạt động' : 'Đã khóa'}
+                    <span
+                      className={`admin-status admin-status--${user.enabled ? 'active' : 'locked'}`}
+                      role="cell"
+                      title={user.status}
+                    >
+                      {user.enabled ? 'Đang hoạt động' : 'Đã khóa'}
                     </span>
                     <div className="admin-actions" role="cell">
                       <button className="quiet-button" type="button" disabled title="Sẽ kết nối AWS Cognito ở P7.2">
@@ -1666,7 +1693,7 @@ export function App() {
                     </div>
                   </div>
                 ))}
-                {filteredAdminUsers.length === 0 && (
+                {!adminUsersLoading && filteredAdminUsers.length === 0 && (
                   <div className="empty-state">
                     <Users size={28} />
                     <h3>Không tìm thấy người dùng</h3>
