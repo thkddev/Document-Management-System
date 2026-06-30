@@ -259,6 +259,8 @@ export class DmsStack extends cdk.Stack {
           'cognito-idp:AdminCreateUser',
           'cognito-idp:AdminSetUserPassword',
           'cognito-idp:AdminAddUserToGroup',
+          'cognito-idp:AdminRemoveUserFromGroup',
+          'cognito-idp:AdminUpdateUserAttributes',
         ],
         resources: [userPool.userPoolArn],
       }),
@@ -596,6 +598,10 @@ export class DmsStack extends cdk.Stack {
       authorizationType: apigateway.AuthorizationType.COGNITO,
     });
     adminUsersResource.addMethod('POST', new apigateway.LambdaIntegration(adminUsersFunction), {
+      authorizer,
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+    });
+    adminUsersResource.addMethod('PATCH', new apigateway.LambdaIntegration(adminUsersFunction), {
       authorizer,
       authorizationType: apigateway.AuthorizationType.COGNITO,
     });

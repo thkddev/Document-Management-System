@@ -1,14 +1,16 @@
 import { CognitoIdentityProviderClient } from '@aws-sdk/client-cognito-identity-provider';
 import type { APIGatewayProxyHandler, APIGatewayProxyResult } from 'aws-lambda';
-import type { CreateAdminUserRequest } from '../domain/models.js';
+import type { CreateAdminUserRequest, UpdateAdminUserRequest } from '../domain/models.js';
 import { documentPrincipalFromClaims } from '../shared/auth.js';
 import { errorResponse, jsonResponse } from '../shared/http.js';
 import {
   AdminUserAlreadyExistsError,
+  AdminUserNotFoundError,
   AdminUserValidationError,
   AdminUsersForbiddenError,
   createAdminUser,
   listAdminUsers,
+  updateAdminUser,
 } from '../services/admin-users.js';
 
 const cognito = new CognitoIdentityProviderClient({});
@@ -35,6 +37,15 @@ function parseCreateAdminUserRequest(body: unknown): CreateAdminUserRequest {
   };
 }
 
+function parseUpdateAdminUserRequest(body: unknown): UpdateAdminUserRequest {
+  const record = bodyRecord(body);
+  return {
+    email: typeof record.email === 'string' ? record.email : '',
+    departmentId: typeof record.departmentId === 'string' ? record.departmentId : '',
+    role: record.role as UpdateAdminUserRequest['role'],
+  };
+}
+
 export const handler: APIGatewayProxyHandler = async (event): Promise<APIGatewayProxyResult> => {
   const requestId = event.requestContext.requestId;
   const principal = documentPrincipalFromClaims(event.requestContext.authorizer?.claims);
@@ -47,7 +58,7 @@ export const handler: APIGatewayProxyHandler = async (event): Promise<APIGateway
     });
   }
 
-  if (event.httpMethod !== 'GET' && event.httpMethod !== 'POST') {
+  if (event.httpMethod !== 'GET' && event.httpMethod !== 'POST' && event.httpMethod !== 'PATCH') {
     return errorResponse(405, {
       code: 'METHOD_NOT_ALLOWED',
       message: 'Phương thức không được hỗ trợ.',
@@ -83,6 +94,25 @@ export const handler: APIGatewayProxyHandler = async (event): Promise<APIGateway
       return jsonResponse(201, { item });
     }
 
+    if (event.httpMethod === 'PATCH') {
+      const item = await updateAdminUser(
+        principal,
+        parseUpdateAdminUserRequest(parseBody(event.body)),
+        {
+          cognito,
+          userPoolId: process.env.USER_POOL_ID,
+        },
+      );
+      console.info('ADMIN_USER_UPDATED', {
+        requestId,
+        actorId: principal.userId,
+        email: item.email,
+        departmentId: item.departmentId,
+        roles: item.roles,
+      });
+      return jsonResponse(200, { item });
+    }
+
     const items = await listAdminUsers(principal, {
       cognito,
       userPoolId: process.env.USER_POOL_ID,
@@ -114,6 +144,14 @@ export const handler: APIGatewayProxyHandler = async (event): Promise<APIGateway
       });
     }
 
+    if (err instanceof AdminUserNotFoundError) {
+      return errorResponse(404, {
+        code: 'ADMIN_USER_NOT_FOUND',
+        message: err.message,
+        requestId,
+      });
+    }
+
     if (err instanceof SyntaxError) {
       return errorResponse(400, {
         code: 'VALIDATION_ERROR',
@@ -122,13 +160,23 @@ export const handler: APIGatewayProxyHandler = async (event): Promise<APIGateway
       });
     }
 
-    console.error('listAdminUsers failed', { requestId, err });
+    const failureCode =
+      event.httpMethod === 'POST'
+        ? 'CREATE_ADMIN_USER_FAILED'
+        : event.httpMethod === 'PATCH'
+          ? 'UPDATE_ADMIN_USER_FAILED'
+          : 'LIST_ADMIN_USERS_FAILED';
+    const failureMessage =
+      event.httpMethod === 'POST'
+        ? 'Không thể tạo người dùng. Vui lòng thử lại.'
+        : event.httpMethod === 'PATCH'
+          ? 'Không thể cập nhật người dùng. Vui lòng thử lại.'
+          : 'Không thể tải danh sách người dùng. Vui lòng thử lại.';
+
+    console.error('adminUsers request failed', { requestId, method: event.httpMethod, err });
     return errorResponse(500, {
-      code: event.httpMethod === 'POST' ? 'CREATE_ADMIN_USER_FAILED' : 'LIST_ADMIN_USERS_FAILED',
-      message:
-        event.httpMethod === 'POST'
-          ? 'Không thể tạo người dùng. Vui lòng thử lại.'
-          : 'Không thể tải danh sách người dùng. Vui lòng thử lại.',
+      code: failureCode,
+      message: failureMessage,
       requestId,
     });
   }

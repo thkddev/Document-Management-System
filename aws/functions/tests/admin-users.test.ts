@@ -2,7 +2,9 @@ import {
   AdminAddUserToGroupCommand,
   AdminCreateUserCommand,
   AdminListGroupsForUserCommand,
+  AdminRemoveUserFromGroupCommand,
   AdminSetUserPasswordCommand,
+  AdminUpdateUserAttributesCommand,
   ListUsersCommand,
 } from '@aws-sdk/client-cognito-identity-provider';
 import { describe, expect, it, vi } from 'vitest';
@@ -11,6 +13,7 @@ import {
   AdminUsersForbiddenError,
   createAdminUser,
   listAdminUsers,
+  updateAdminUser,
 } from '../src/services/admin-users.js';
 
 describe('admin users service', () => {
@@ -150,5 +153,45 @@ describe('admin users service', () => {
         { cognito: { send } as never, userPoolId: 'pool-1' },
       ),
     ).rejects.toBeInstanceOf(AdminUserAlreadyExistsError);
+  });
+
+  it('cập nhật phòng ban và đồng bộ group vai trò Cognito', async () => {
+    const send = vi.fn(async (command) => {
+      if (command instanceof AdminUpdateUserAttributesCommand) return {};
+      if (command instanceof AdminListGroupsForUserCommand) {
+        return {
+          Groups: [{ GroupName: 'EMPLOYEE' }, { GroupName: 'UNRELATED' }],
+        };
+      }
+      if (
+        command instanceof AdminRemoveUserFromGroupCommand ||
+        command instanceof AdminAddUserToGroupCommand
+      ) {
+        return {};
+      }
+      throw new Error('unexpected command');
+    });
+
+    await expect(
+      updateAdminUser(
+        { userId: 'admin-1', departmentId: 'TECH', roles: ['SYSTEM_ADMIN'] },
+        {
+          email: ' TEST123@GMAIL.COM ',
+          departmentId: 'hr',
+          role: 'DEPARTMENT_ADMIN',
+        },
+        { cognito: { send } as never, userPoolId: 'pool-1' },
+      ),
+    ).resolves.toMatchObject({
+      email: 'test123@gmail.com',
+      departmentId: 'HR',
+      roles: ['DEPARTMENT_ADMIN'],
+      status: 'UPDATED',
+    });
+
+    expect(send).toHaveBeenNthCalledWith(1, expect.any(AdminUpdateUserAttributesCommand));
+    expect(send).toHaveBeenNthCalledWith(2, expect.any(AdminListGroupsForUserCommand));
+    expect(send).toHaveBeenNthCalledWith(3, expect.any(AdminRemoveUserFromGroupCommand));
+    expect(send).toHaveBeenNthCalledWith(4, expect.any(AdminAddUserToGroupCommand));
   });
 });

@@ -4,7 +4,7 @@ const { apiFetch } = vi.hoisted(() => ({ apiFetch: vi.fn() }));
 
 vi.mock('./api-client', () => ({ apiFetch }));
 
-const { createAdminUser, listAdminUsers } = await import('./admin-users');
+const { createAdminUser, listAdminUsers, updateAdminUser } = await import('./admin-users');
 
 describe('admin users client', () => {
   beforeEach(() => apiFetch.mockReset());
@@ -54,6 +54,33 @@ describe('admin users client', () => {
     await expect(createAdminUser(input)).resolves.toEqual(item);
     expect(apiFetch).toHaveBeenCalledWith('/admin/users', {
       method: 'POST',
+      body: JSON.stringify(input),
+    });
+  });
+
+  it('cập nhật người dùng quản trị qua PATCH /admin/users', async () => {
+    const item = {
+      id: 'user-1',
+      name: 'Test Employee',
+      email: 'test123@gmail.com',
+      departmentId: 'HR',
+      roles: ['DEPARTMENT_ADMIN'],
+      status: 'CONFIRMED',
+      enabled: true,
+      createdAt: '2026-06-30T04:36:48.000Z',
+      updatedAt: '2026-06-30T05:36:48.000Z',
+    };
+    apiFetch.mockResolvedValue({ item });
+
+    const input = {
+      email: 'test123@gmail.com',
+      departmentId: 'HR',
+      role: 'DEPARTMENT_ADMIN' as const,
+    };
+
+    await expect(updateAdminUser(input)).resolves.toEqual(item);
+    expect(apiFetch).toHaveBeenCalledWith('/admin/users', {
+      method: 'PATCH',
       body: JSON.stringify(input),
     });
   });

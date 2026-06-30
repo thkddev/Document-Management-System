@@ -38,6 +38,16 @@ export interface CreateAdminUserResponse {
   item: AdminUserSummary;
 }
 
+export interface UpdateAdminUserRequest {
+  email: string;
+  departmentId: string;
+  role: UserRole;
+}
+
+export interface UpdateAdminUserResponse {
+  item: AdminUserSummary;
+}
+
 export const documentClassifications = [
   'PUBLIC',
   'INTERNAL',

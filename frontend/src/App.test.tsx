@@ -6,6 +6,7 @@ import { App } from './App';
 const mocks = vi.hoisted(() => ({
   createAdminUser: vi.fn(),
   listAdminUsers: vi.fn(),
+  updateAdminUser: vi.fn(),
   listDocuments: vi.fn(),
   listPendingShareRequests: vi.fn(),
   approveShareRequest: vi.fn(),
@@ -41,6 +42,7 @@ vi.mock('./lib/uploads', () => ({
 vi.mock('./lib/admin-users', () => ({
   createAdminUser: mocks.createAdminUser,
   listAdminUsers: mocks.listAdminUsers,
+  updateAdminUser: mocks.updateAdminUser,
 }));
 
 vi.mock('./lib/documents', async (importOriginal) => ({
@@ -195,6 +197,7 @@ describe('App', () => {
     };
     mocks.listAdminUsers.mockReset();
     mocks.createAdminUser.mockReset();
+    mocks.updateAdminUser.mockReset();
     mocks.listDocuments.mockReset();
     mocks.listPendingShareRequests.mockReset();
     mocks.approveShareRequest.mockReset();
@@ -213,6 +216,17 @@ describe('App', () => {
       enabled: true,
       createdAt: '2026-06-30T04:36:48.000Z',
       updatedAt: '2026-06-30T04:36:48.000Z',
+    });
+    mocks.updateAdminUser.mockResolvedValue({
+      id: 'user-2',
+      name: 'Han HR',
+      email: 'hanlap0908@gmail.com',
+      departmentId: 'TECH',
+      roles: ['DEPARTMENT_ADMIN'],
+      status: 'CONFIRMED',
+      enabled: true,
+      createdAt: '2026-06-30T04:36:48.000Z',
+      updatedAt: '2026-06-30T05:36:48.000Z',
     });
     mocks.listDocuments.mockResolvedValue([readyDocument]);
     mocks.listPendingShareRequests.mockResolvedValue([]);
@@ -337,6 +351,56 @@ describe('App', () => {
     await screen.findByText('Đã tạo người dùng test123@gmail.com.');
     expect(mocks.listAdminUsers).toHaveBeenCalledTimes(2);
     expect(screen.queryByRole('form', { name: 'Tạo người dùng' })).not.toBeInTheDocument();
+  });
+
+  it('đổi phòng ban và vai trò người dùng từ trang quản trị', async () => {
+    mocks.currentUser = {
+      ...mocks.currentUser,
+      roles: ['SYSTEM_ADMIN'],
+      displayName: 'Duy Admin',
+    };
+    mocks.listAdminUsers
+      .mockResolvedValueOnce(adminUsers)
+      .mockResolvedValueOnce([
+        adminUsers[0],
+        {
+          ...adminUsers[1],
+          departmentId: 'TECH',
+          roles: ['DEPARTMENT_ADMIN'],
+          updatedAt: '2026-06-30T05:36:48.000Z',
+        },
+        adminUsers[2],
+        adminUsers[3],
+      ]);
+    renderApp();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Quản trị' }));
+    await waitFor(() => expect(mocks.listAdminUsers).toHaveBeenCalledTimes(1));
+    await screen.findByText('hanlap0908@gmail.com');
+
+    const editButtons = screen.getAllByRole('button', { name: 'Đổi vai trò' });
+    expect(editButtons).toHaveLength(4);
+    fireEvent.click(editButtons[1]!);
+    const dialog = screen.getByRole('form', { name: 'Đổi vai trò' });
+
+    fireEvent.change(within(dialog).getByLabelText('Phòng ban'), {
+      target: { value: 'TECH' },
+    });
+    fireEvent.change(within(dialog).getByLabelText('Vai trò'), {
+      target: { value: 'DEPARTMENT_ADMIN' },
+    });
+    fireEvent.submit(dialog);
+
+    await waitFor(() =>
+      expect(mocks.updateAdminUser).toHaveBeenCalledWith({
+        email: 'hanlap0908@gmail.com',
+        departmentId: 'TECH',
+        role: 'DEPARTMENT_ADMIN',
+      }),
+    );
+    await screen.findByText('Đã cập nhật người dùng hanlap0908@gmail.com.');
+    expect(mocks.listAdminUsers).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole('form', { name: 'Đổi vai trò' })).not.toBeInTheDocument();
   });
 
   it('lọc người dùng quản trị theo từ khóa, phòng ban và vai trò', async () => {

@@ -31,6 +31,7 @@ import { useAuth } from './features/auth/AuthContext';
 import {
   createAdminUser,
   listAdminUsers,
+  updateAdminUser,
   type AdminUserRole,
   type AdminUserSummary,
 } from './lib/admin-users';
@@ -122,6 +123,13 @@ interface CreateAdminUserForm {
   departmentId: DepartmentId;
   role: AdminRole;
   password: string;
+}
+
+interface EditAdminUserForm {
+  email: string;
+  name: string;
+  departmentId: DepartmentId;
+  role: AdminRole;
 }
 
 export const classificationLabels: Record<DocumentSummary['classification'], Classification> = {
@@ -291,6 +299,10 @@ const defaultCreateAdminUserForm: CreateAdminUserForm = {
   role: 'EMPLOYEE',
   password: '',
 };
+
+function primaryAdminRole(user: AdminUserRow): AdminRole {
+  return user.roles.find((role) => role === 'SYSTEM_ADMIN' || role === 'DEPARTMENT_ADMIN') ?? 'EMPLOYEE';
+}
 
 const uploadClassifications: Array<{ value: DocumentClassification; label: string }> = [
   { value: 'INTERNAL', label: 'Nội bộ' },
@@ -607,6 +619,10 @@ export function App() {
   const [createUserSubmitting, setCreateUserSubmitting] = useState(false);
   const [createUserError, setCreateUserError] = useState('');
   const [createUserMessage, setCreateUserMessage] = useState('');
+  const [editUserForm, setEditUserForm] = useState<EditAdminUserForm | null>(null);
+  const [editUserSubmitting, setEditUserSubmitting] = useState(false);
+  const [editUserError, setEditUserError] = useState('');
+  const [editUserMessage, setEditUserMessage] = useState('');
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploadTitle, setUploadTitle] = useState('');
@@ -859,6 +875,53 @@ export function App() {
       }
     },
     [canManageSystem, createUserForm, refreshAdminUsers],
+  );
+
+  const openEditUserModal = useCallback((user: AdminUserRow) => {
+    setEditUserForm({
+      email: user.email,
+      name: user.name,
+      departmentId: departmentOptions.some((department) => department.id === user.departmentId)
+        ? (user.departmentId as DepartmentId)
+        : 'TECH',
+      role: primaryAdminRole(user),
+    });
+    setEditUserError('');
+    setEditUserMessage('');
+  }, []);
+
+  const closeEditUserModal = useCallback(() => {
+    if (editUserSubmitting) return;
+    setEditUserForm(null);
+    setEditUserError('');
+  }, [editUserSubmitting]);
+
+  const submitEditUser = useCallback(
+    async (event: FormEvent<HTMLFormElement>): Promise<void> => {
+      event.preventDefault();
+      if (!canManageSystem || !editUserForm) return;
+
+      setEditUserSubmitting(true);
+      setEditUserError('');
+      setEditUserMessage('');
+      try {
+        const updated = await updateAdminUser({
+          email: editUserForm.email,
+          departmentId: editUserForm.departmentId,
+          role: editUserForm.role,
+        });
+        setEditUserMessage(`Đã cập nhật người dùng ${updated.email}.`);
+        setEditUserForm(null);
+        await refreshAdminUsers();
+      } catch (err) {
+        setEditUserError(
+          err instanceof Error ? err.message : 'Không thể cập nhật người dùng. Vui lòng thử lại.',
+        );
+      } finally {
+        setEditUserSubmitting(false);
+      }
+    },
+    [canManageSystem, editUserForm, refreshAdminUsers],
   );
 
   useEffect(() => {
@@ -1678,6 +1741,9 @@ export function App() {
               {createUserMessage && (
                 <p className="admin-feedback admin-feedback--success">{createUserMessage}</p>
               )}
+              {editUserMessage && (
+                <p className="admin-feedback admin-feedback--success">{editUserMessage}</p>
+              )}
               {adminUsersError && (
                 <p className="document-load-error" role="alert">
                   {adminUsersError}
@@ -1760,10 +1826,19 @@ export function App() {
                       {user.enabled ? 'Đang hoạt động' : 'Đã khóa'}
                     </span>
                     <div className="admin-actions" role="cell">
-                      <button className="quiet-button" type="button" disabled title="Sẽ kết nối AWS Cognito ở P7.2">
+                      <button
+                        className="quiet-button"
+                        type="button"
+                        onClick={() => openEditUserModal(user)}
+                      >
                         Đổi vai trò
                       </button>
-                      <button className="quiet-button quiet-button--danger" type="button" disabled title="Sẽ kết nối AWS Cognito ở P7.2">
+                      <button
+                        className="quiet-button quiet-button--danger"
+                        type="button"
+                        disabled
+                        title="Sẽ kết nối AWS Cognito ở P7.5"
+                      >
                         Khóa tài khoản
                       </button>
                     </div>
@@ -1898,6 +1973,96 @@ export function App() {
                     type="button"
                     onClick={closeCreateUserModal}
                     disabled={createUserSubmitting}
+                  >
+                    Hủy
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {editUserForm && canManageSystem && (
+            <div className="share-modal-backdrop" role="presentation">
+              <form
+                className="share-modal admin-create-user-modal"
+                aria-labelledby="edit-user-heading"
+                onSubmit={(event) => void submitEditUser(event)}
+              >
+                <button
+                  className="icon-button share-modal-close"
+                  type="button"
+                  onClick={closeEditUserModal}
+                  disabled={editUserSubmitting}
+                  aria-label="Đóng đổi vai trò"
+                  title="Đóng"
+                >
+                  <X size={18} />
+                </button>
+                <div className="share-modal-heading">
+                  <span>Quản trị Cognito</span>
+                  <h2 id="edit-user-heading">Đổi vai trò</h2>
+                </div>
+                <div className="admin-create-user-grid">
+                  <label>
+                    <span>Người dùng</span>
+                    <input value={`${editUserForm.name} · ${editUserForm.email}`} disabled />
+                  </label>
+                  <label>
+                    <span>Phòng ban</span>
+                    <select
+                      value={editUserForm.departmentId}
+                      onChange={(event) =>
+                        setEditUserForm((form) =>
+                          form
+                            ? { ...form, departmentId: event.target.value as DepartmentId }
+                            : form,
+                        )
+                      }
+                      disabled={editUserSubmitting}
+                    >
+                      {departmentOptions.map((department) => (
+                        <option key={department.id} value={department.id}>
+                          {department.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="admin-create-user-password">
+                    <span>Vai trò</span>
+                    <select
+                      value={editUserForm.role}
+                      onChange={(event) =>
+                        setEditUserForm((form) =>
+                          form ? { ...form, role: event.target.value as AdminRole } : form,
+                        )
+                      }
+                      disabled={editUserSubmitting}
+                    >
+                      {adminRoleFilters
+                        .filter((role) => role.value !== 'ALL')
+                        .map((role) => (
+                          <option key={role.value} value={role.value}>
+                            {role.label}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                </div>
+                {editUserError && (
+                  <p className="upload-status upload-status--error" role="alert">
+                    {editUserError}
+                  </p>
+                )}
+                <div className="share-modal-actions">
+                  <button className="primary-action" type="submit" disabled={editUserSubmitting}>
+                    <Users size={18} />
+                    {editUserSubmitting ? 'Đang lưu...' : 'Lưu thay đổi'}
+                  </button>
+                  <button
+                    className="quiet-button"
+                    type="button"
+                    onClick={closeEditUserModal}
+                    disabled={editUserSubmitting}
                   >
                     Hủy
                   </button>

@@ -71,6 +71,34 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '409':
           $ref: '#/components/responses/Conflict'
+    patch:
+      operationId: updateAdminUser
+      summary: Cập nhật phòng ban và vai trò người dùng Cognito cho System Admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAdminUserRequest'
+      responses:
+        '200':
+          description: Người dùng đã được cập nhật trong Cognito
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [item]
+                properties:
+                  item:
+                    $ref: '#/components/schemas/AdminUserSummary'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /documents:
     get:
       operationId: listDocuments
@@ -408,6 +436,19 @@ components:
         password:
           type: string
           minLength: 8
+    UpdateAdminUserRequest:
+      type: object
+      required: [email, departmentId, role]
+      properties:
+        email:
+          type: string
+          format: email
+        departmentId:
+          type: string
+          minLength: 2
+        role:
+          type: string
+          enum: [EMPLOYEE, DEPARTMENT_ADMIN, SYSTEM_ADMIN]
     DocumentSummary:
       type: object
       required:

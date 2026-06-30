@@ -1,19 +1,23 @@
 import type { APIGatewayProxyEvent } from 'aws-lambda';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { createAdminUser, listAdminUsers } = vi.hoisted(() => ({
+const { createAdminUser, listAdminUsers, updateAdminUser } = vi.hoisted(() => ({
   createAdminUser: vi.fn(),
   listAdminUsers: vi.fn(),
+  updateAdminUser: vi.fn(),
 }));
 
 vi.mock('../src/services/admin-users.js', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   createAdminUser,
   listAdminUsers,
+  updateAdminUser,
 }));
 
 const { handler } = await import('../src/handlers/admin-users.js');
-const { AdminUserAlreadyExistsError } = await import('../src/services/admin-users.js');
+const { AdminUserAlreadyExistsError, AdminUserNotFoundError } = await import(
+  '../src/services/admin-users.js'
+);
 
 function createEvent(
   claims?: Record<string, unknown>,
@@ -70,6 +74,7 @@ describe('GET /admin/users handler', () => {
     process.env.USER_POOL_ID = 'pool-1';
     createAdminUser.mockReset();
     listAdminUsers.mockReset();
+    updateAdminUser.mockReset();
   });
 
   it('trả danh sách người dùng cho System Admin', async () => {
@@ -166,5 +171,65 @@ describe('GET /admin/users handler', () => {
     );
 
     expect(response?.statusCode).toBe(409);
+  });
+
+  it('cập nhật phòng ban và vai trò người dùng cho System Admin', async () => {
+    updateAdminUser.mockResolvedValue({ id: 'user-1', email: 'test123@gmail.com' });
+
+    const response = await handler(
+      createEvent(
+        {
+          sub: 'admin-1',
+          'custom:departmentId': 'TECH',
+          'cognito:groups': 'SYSTEM_ADMIN',
+        },
+        'PATCH',
+        JSON.stringify({
+          email: 'test123@gmail.com',
+          departmentId: 'HR',
+          role: 'DEPARTMENT_ADMIN',
+        }),
+      ),
+      {} as never,
+      () => undefined,
+    );
+
+    expect(response?.statusCode).toBe(200);
+    expect(JSON.parse(response?.body ?? '{}')).toEqual({
+      item: { id: 'user-1', email: 'test123@gmail.com' },
+    });
+    expect(updateAdminUser).toHaveBeenCalledWith(
+      { userId: 'admin-1', departmentId: 'TECH', roles: ['SYSTEM_ADMIN'] },
+      {
+        email: 'test123@gmail.com',
+        departmentId: 'HR',
+        role: 'DEPARTMENT_ADMIN',
+      },
+      expect.objectContaining({ userPoolId: 'pool-1' }),
+    );
+  });
+
+  it('trả 404 khi cập nhật user không tồn tại', async () => {
+    updateAdminUser.mockRejectedValue(new AdminUserNotFoundError('missing@example.com'));
+
+    const response = await handler(
+      createEvent(
+        {
+          sub: 'admin-1',
+          'custom:departmentId': 'TECH',
+          'cognito:groups': 'SYSTEM_ADMIN',
+        },
+        'PATCH',
+        JSON.stringify({
+          email: 'missing@example.com',
+          departmentId: 'HR',
+          role: 'EMPLOYEE',
+        }),
+      ),
+      {} as never,
+      () => undefined,
+    );
+
+    expect(response?.statusCode).toBe(404);
   });
 });

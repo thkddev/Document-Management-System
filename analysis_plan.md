@@ -497,9 +497,17 @@ Bảng này chỉ là baseline và phải được thay bằng permission matrix
 - [x] Hiển thị lỗi tiếng Việt rõ ràng khi email trùng, password sai policy hoặc thiếu quyền.
 - [x] Ghi log vận hành cho thao tác tạo user, không ghi mật khẩu hoặc token.
 
-### Các bước sau P7.3
+### P7.4 - Đổi phòng ban và vai trò người dùng
 
-- [ ] P7.4 - Đổi phòng ban và vai trò người dùng từ trang Quản trị.
+- [x] Bật nút đổi vai trò ở từng dòng người dùng.
+- [x] Tạo modal chọn phòng ban và vai trò mới.
+- [x] Cập nhật `custom:departmentId` trong Cognito bằng Lambda backend.
+- [x] Đồng bộ group vai trò Cognito: gỡ role cũ của hệ thống và thêm role mới.
+- [x] Làm mới danh sách người dùng sau khi lưu thành công.
+- [x] Ghi log vận hành cho thao tác cập nhật user, không ghi token.
+
+### Các bước sau P7.4
+
 - [ ] P7.5 - Khóa, mở khóa và reset mật khẩu người dùng.
 - [ ] P7.6 - Đồng bộ trạng thái disabled, user chuyển phòng ban và ảnh hưởng tới quyền xem tài liệu.
 

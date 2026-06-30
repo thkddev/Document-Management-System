@@ -22,11 +22,17 @@ export interface CreateAdminUserInput {
   password: string;
 }
 
+export interface UpdateAdminUserInput {
+  email: string;
+  departmentId: string;
+  role: AdminUserRole;
+}
+
 interface ListAdminUsersResponse {
   items: AdminUserSummary[];
 }
 
-interface CreateAdminUserResponse {
+interface AdminUserItemResponse {
   item: AdminUserSummary;
 }
 
@@ -36,8 +42,16 @@ export async function listAdminUsers(): Promise<AdminUserSummary[]> {
 }
 
 export async function createAdminUser(input: CreateAdminUserInput): Promise<AdminUserSummary> {
-  const response = await apiFetch<CreateAdminUserResponse>('/admin/users', {
+  const response = await apiFetch<AdminUserItemResponse>('/admin/users', {
     method: 'POST',
+    body: JSON.stringify(input),
+  });
+  return response.item;
+}
+
+export async function updateAdminUser(input: UpdateAdminUserInput): Promise<AdminUserSummary> {
+  const response = await apiFetch<AdminUserItemResponse>('/admin/users', {
+    method: 'PATCH',
     body: JSON.stringify(input),
   });
   return response.item;

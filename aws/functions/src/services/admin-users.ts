@@ -2,7 +2,9 @@ import {
   AdminAddUserToGroupCommand,
   AdminCreateUserCommand,
   AdminListGroupsForUserCommand,
+  AdminRemoveUserFromGroupCommand,
   AdminSetUserPasswordCommand,
+  AdminUpdateUserAttributesCommand,
   ListUsersCommand,
   type CognitoIdentityProviderClient,
   type UserType,
@@ -12,6 +14,7 @@ import {
   type AdminUserSummary,
   type CreateAdminUserRequest,
   type DocumentPrincipal,
+  type UpdateAdminUserRequest,
   type UserRole,
 } from '../domain/models.js';
 
@@ -21,6 +24,11 @@ export interface ListAdminUsersDependencies {
 }
 
 export interface CreateAdminUserDependencies {
+  cognito: Pick<CognitoIdentityProviderClient, 'send'>;
+  userPoolId: string;
+}
+
+export interface UpdateAdminUserDependencies {
   cognito: Pick<CognitoIdentityProviderClient, 'send'>;
   userPoolId: string;
 }
@@ -137,6 +145,80 @@ export async function createAdminUser(
   }
 }
 
+export async function updateAdminUser(
+  principal: DocumentPrincipal,
+  request: UpdateAdminUserRequest,
+  deps: UpdateAdminUserDependencies,
+): Promise<AdminUserSummary> {
+  if (!canListAdminUsers(principal)) {
+    throw new AdminUsersForbiddenError();
+  }
+
+  const normalized = normalizeUpdateAdminUserRequest(request);
+
+  try {
+    await deps.cognito.send(
+      new AdminUpdateUserAttributesCommand({
+        UserPoolId: deps.userPoolId,
+        Username: normalized.email,
+        UserAttributes: [{ Name: 'custom:departmentId', Value: normalized.departmentId }],
+      }),
+    );
+
+    const groups = await deps.cognito.send(
+      new AdminListGroupsForUserCommand({
+        UserPoolId: deps.userPoolId,
+        Username: normalized.email,
+      }),
+    );
+    const currentRoleGroups = (groups.Groups ?? [])
+      .map((group) => group.GroupName)
+      .filter((group): group is UserRole => userRoles.includes(group as UserRole));
+
+    await Promise.all(
+      currentRoleGroups
+        .filter((group) => group !== normalized.role)
+        .map((group) =>
+          deps.cognito.send(
+            new AdminRemoveUserFromGroupCommand({
+              UserPoolId: deps.userPoolId,
+              Username: normalized.email,
+              GroupName: group,
+            }),
+          ),
+        ),
+    );
+
+    if (!currentRoleGroups.includes(normalized.role)) {
+      await deps.cognito.send(
+        new AdminAddUserToGroupCommand({
+          UserPoolId: deps.userPoolId,
+          Username: normalized.email,
+          GroupName: normalized.role,
+        }),
+      );
+    }
+
+    return {
+      id: normalized.email,
+      name: normalized.email,
+      email: normalized.email,
+      departmentId: normalized.departmentId,
+      roles: [normalized.role],
+      status: 'UPDATED',
+      enabled: true,
+      createdAt: '',
+      updatedAt: new Date().toISOString(),
+    };
+  } catch (err) {
+    const errorName = err instanceof Error ? err.name : '';
+    if (errorName === 'UserNotFoundException') {
+      throw new AdminUserNotFoundError(normalized.email);
+    }
+    throw err;
+  }
+}
+
 export class AdminUsersForbiddenError extends Error {
   constructor() {
     super('Tài khoản không có quyền xem danh sách người dùng.');
@@ -148,6 +230,13 @@ export class AdminUserAlreadyExistsError extends Error {
   constructor(email: string) {
     super(`Email ${email} đã tồn tại trong Cognito.`);
     this.name = 'AdminUserAlreadyExistsError';
+  }
+}
+
+export class AdminUserNotFoundError extends Error {
+  constructor(email: string) {
+    super(`Không tìm thấy người dùng ${email} trong Cognito.`);
+    this.name = 'AdminUserNotFoundError';
   }
 }
 
@@ -193,6 +282,30 @@ function normalizeCreateAdminUserRequest(request: CreateAdminUserRequest): Creat
   }
 
   return { email, name, departmentId, role, password };
+}
+
+function normalizeUpdateAdminUserRequest(request: UpdateAdminUserRequest): UpdateAdminUserRequest {
+  const issues: AdminUserValidationIssue[] = [];
+  const email = typeof request.email === 'string' ? request.email.trim().toLocaleLowerCase('vi') : '';
+  const departmentId =
+    typeof request.departmentId === 'string' ? request.departmentId.trim().toUpperCase() : '';
+  const role = request.role;
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    issues.push({ field: 'email', message: 'Email không hợp lệ.' });
+  }
+  if (!departmentId) {
+    issues.push({ field: 'departmentId', message: 'Phòng ban không được để trống.' });
+  }
+  if (!userRoles.includes(role)) {
+    issues.push({ field: 'role', message: 'Vai trò không hợp lệ.' });
+  }
+
+  if (issues.length > 0) {
+    throw new AdminUserValidationError(issues);
+  }
+
+  return { email, departmentId, role };
 }
 
 function toAdminUserSummary(user: UserType, rawGroups: Array<string | undefined>): AdminUserSummary {
