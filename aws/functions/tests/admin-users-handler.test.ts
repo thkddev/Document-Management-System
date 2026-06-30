@@ -1,9 +1,10 @@
 import type { APIGatewayProxyEvent } from 'aws-lambda';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { createAdminUser, listAdminUsers, updateAdminUser } = vi.hoisted(() => ({
+const { createAdminUser, listAdminUsers, runAdminUserAction, updateAdminUser } = vi.hoisted(() => ({
   createAdminUser: vi.fn(),
   listAdminUsers: vi.fn(),
+  runAdminUserAction: vi.fn(),
   updateAdminUser: vi.fn(),
 }));
 
@@ -11,6 +12,7 @@ vi.mock('../src/services/admin-users.js', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   createAdminUser,
   listAdminUsers,
+  runAdminUserAction,
   updateAdminUser,
 }));
 
@@ -74,6 +76,7 @@ describe('GET /admin/users handler', () => {
     process.env.USER_POOL_ID = 'pool-1';
     createAdminUser.mockReset();
     listAdminUsers.mockReset();
+    runAdminUserAction.mockReset();
     updateAdminUser.mockReset();
   });
 
@@ -231,5 +234,47 @@ describe('GET /admin/users handler', () => {
     );
 
     expect(response?.statusCode).toBe(404);
+  });
+
+  it('thực hiện thao tác khóa/mở/reset tài khoản người dùng', async () => {
+    runAdminUserAction.mockResolvedValue({
+      id: 'user-1',
+      email: 'user@example.com',
+      status: 'DISABLED',
+    });
+
+    const event = createEvent(
+      {
+        sub: 'admin-1',
+        email: 'admin@example.com',
+        'custom:departmentId': 'TECH',
+        'cognito:groups': 'SYSTEM_ADMIN',
+      },
+      'POST',
+      JSON.stringify({
+        email: 'user@example.com',
+        action: 'DISABLE',
+      }),
+    );
+    event.resource = '/admin/users/actions';
+    event.path = '/admin/users/actions';
+    event.requestContext.resourcePath = '/admin/users/actions';
+
+    const response = await handler(event, {} as never, () => undefined);
+
+    expect(response?.statusCode).toBe(200);
+    expect(JSON.parse(response?.body ?? '{}')).toEqual({
+      item: { id: 'user-1', email: 'user@example.com', status: 'DISABLED' },
+    });
+    expect(runAdminUserAction).toHaveBeenCalledWith(
+      {
+        userId: 'admin-1',
+        email: 'admin@example.com',
+        departmentId: 'TECH',
+        roles: ['SYSTEM_ADMIN'],
+      },
+      { email: 'user@example.com', action: 'DISABLE' },
+      expect.objectContaining({ userPoolId: 'pool-1' }),
+    );
   });
 });

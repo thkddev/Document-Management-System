@@ -506,9 +506,17 @@ Bảng này chỉ là baseline và phải được thay bằng permission matrix
 - [x] Làm mới danh sách người dùng sau khi lưu thành công.
 - [x] Ghi log vận hành cho thao tác cập nhật user, không ghi token.
 
-### Các bước sau P7.4
+### P7.5 - Khóa, mở khóa và reset mật khẩu người dùng
 
-- [ ] P7.5 - Khóa, mở khóa và reset mật khẩu người dùng.
+- [x] Bật thao tác khóa tài khoản với user đang hoạt động.
+- [x] Bật thao tác mở khóa với user đang bị khóa.
+- [x] Thêm modal reset mật khẩu người dùng.
+- [x] Gọi Cognito `AdminDisableUser`, `AdminEnableUser` và `AdminSetUserPassword` qua Lambda backend.
+- [x] Không cho System Admin tự khóa tài khoản đang đăng nhập.
+- [x] Làm mới danh sách người dùng sau thao tác thành công.
+
+### Các bước sau P7.5
+
 - [ ] P7.6 - Đồng bộ trạng thái disabled, user chuyển phòng ban và ảnh hưởng tới quyền xem tài liệu.
 
 ### Quality gate

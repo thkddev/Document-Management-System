@@ -48,6 +48,20 @@ export interface UpdateAdminUserResponse {
   item: AdminUserSummary;
 }
 
+export const adminUserActions = ['DISABLE', 'ENABLE', 'RESET_PASSWORD'] as const;
+
+export type AdminUserAction = (typeof adminUserActions)[number];
+
+export interface AdminUserActionRequest {
+  email: string;
+  action: AdminUserAction;
+  password?: string;
+}
+
+export interface AdminUserActionResponse {
+  item: AdminUserSummary;
+}
+
 export const documentClassifications = [
   'PUBLIC',
   'INTERNAL',

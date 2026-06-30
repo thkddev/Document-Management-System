@@ -99,6 +99,35 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /admin/users/actions:
+    post:
+      operationId: runAdminUserAction
+      summary: Khóa, mở khóa hoặc reset mật khẩu người dùng Cognito
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminUserActionRequest'
+      responses:
+        '200':
+          description: Thao tác tài khoản đã hoàn tất
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [item]
+                properties:
+                  item:
+                    $ref: '#/components/schemas/AdminUserSummary'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /documents:
     get:
       operationId: listDocuments
@@ -449,6 +478,20 @@ components:
         role:
           type: string
           enum: [EMPLOYEE, DEPARTMENT_ADMIN, SYSTEM_ADMIN]
+    AdminUserActionRequest:
+      type: object
+      required: [email, action]
+      properties:
+        email:
+          type: string
+          format: email
+        action:
+          type: string
+          enum: [DISABLE, ENABLE, RESET_PASSWORD]
+        password:
+          type: string
+          minLength: 8
+          description: Bắt buộc khi action là RESET_PASSWORD.
     DocumentSummary:
       type: object
       required:

@@ -1,6 +1,10 @@
 import { CognitoIdentityProviderClient } from '@aws-sdk/client-cognito-identity-provider';
 import type { APIGatewayProxyHandler, APIGatewayProxyResult } from 'aws-lambda';
-import type { CreateAdminUserRequest, UpdateAdminUserRequest } from '../domain/models.js';
+import type {
+  AdminUserActionRequest,
+  CreateAdminUserRequest,
+  UpdateAdminUserRequest,
+} from '../domain/models.js';
 import { documentPrincipalFromClaims } from '../shared/auth.js';
 import { errorResponse, jsonResponse } from '../shared/http.js';
 import {
@@ -10,6 +14,7 @@ import {
   AdminUsersForbiddenError,
   createAdminUser,
   listAdminUsers,
+  runAdminUserAction,
   updateAdminUser,
 } from '../services/admin-users.js';
 
@@ -46,6 +51,18 @@ function parseUpdateAdminUserRequest(body: unknown): UpdateAdminUserRequest {
   };
 }
 
+function parseAdminUserActionRequest(body: unknown): AdminUserActionRequest {
+  const record = bodyRecord(body);
+  const request: AdminUserActionRequest = {
+    email: typeof record.email === 'string' ? record.email : '',
+    action: record.action as AdminUserActionRequest['action'],
+  };
+  if (typeof record.password === 'string') {
+    request.password = record.password;
+  }
+  return request;
+}
+
 export const handler: APIGatewayProxyHandler = async (event): Promise<APIGatewayProxyResult> => {
   const requestId = event.requestContext.requestId;
   const principal = documentPrincipalFromClaims(event.requestContext.authorizer?.claims);
@@ -75,6 +92,31 @@ export const handler: APIGatewayProxyHandler = async (event): Promise<APIGateway
   }
 
   try {
+    if (event.resource === '/admin/users/actions') {
+      if (event.httpMethod !== 'POST') {
+        return errorResponse(405, {
+          code: 'METHOD_NOT_ALLOWED',
+          message: 'Phương thức không được hỗ trợ.',
+          requestId,
+        });
+      }
+      const item = await runAdminUserAction(
+        principal,
+        parseAdminUserActionRequest(parseBody(event.body)),
+        {
+          cognito,
+          userPoolId: process.env.USER_POOL_ID,
+        },
+      );
+      console.info('ADMIN_USER_ACTION', {
+        requestId,
+        actorId: principal.userId,
+        email: item.email,
+        status: item.status,
+      });
+      return jsonResponse(200, { item });
+    }
+
     if (event.httpMethod === 'POST') {
       const item = await createAdminUser(
         principal,
@@ -161,13 +203,17 @@ export const handler: APIGatewayProxyHandler = async (event): Promise<APIGateway
     }
 
     const failureCode =
-      event.httpMethod === 'POST'
+      event.resource === '/admin/users/actions'
+        ? 'ADMIN_USER_ACTION_FAILED'
+        : event.httpMethod === 'POST'
         ? 'CREATE_ADMIN_USER_FAILED'
         : event.httpMethod === 'PATCH'
           ? 'UPDATE_ADMIN_USER_FAILED'
           : 'LIST_ADMIN_USERS_FAILED';
     const failureMessage =
-      event.httpMethod === 'POST'
+      event.resource === '/admin/users/actions'
+        ? 'Không thể thực hiện thao tác tài khoản. Vui lòng thử lại.'
+        : event.httpMethod === 'POST'
         ? 'Không thể tạo người dùng. Vui lòng thử lại.'
         : event.httpMethod === 'PATCH'
           ? 'Không thể cập nhật người dùng. Vui lòng thử lại.'

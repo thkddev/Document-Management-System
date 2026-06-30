@@ -261,6 +261,8 @@ export class DmsStack extends cdk.Stack {
           'cognito-idp:AdminAddUserToGroup',
           'cognito-idp:AdminRemoveUserFromGroup',
           'cognito-idp:AdminUpdateUserAttributes',
+          'cognito-idp:AdminDisableUser',
+          'cognito-idp:AdminEnableUser',
         ],
         resources: [userPool.userPoolArn],
       }),
@@ -605,6 +607,12 @@ export class DmsStack extends cdk.Stack {
       authorizer,
       authorizationType: apigateway.AuthorizationType.COGNITO,
     });
+    adminUsersResource
+      .addResource('actions')
+      .addMethod('POST', new apigateway.LambdaIntegration(adminUsersFunction), {
+        authorizer,
+        authorizationType: apigateway.AuthorizationType.COGNITO,
+      });
 
     const documentsResource = api.root.addResource('documents');
     documentsResource.addMethod('GET', new apigateway.LambdaIntegration(documentsFunction), {

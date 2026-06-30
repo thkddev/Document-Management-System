@@ -144,6 +144,8 @@ describe('DmsStack', () => {
               'cognito-idp:AdminAddUserToGroup',
               'cognito-idp:AdminRemoveUserFromGroup',
               'cognito-idp:AdminUpdateUserAttributes',
+              'cognito-idp:AdminDisableUser',
+              'cognito-idp:AdminEnableUser',
             ]),
             Effect: 'Allow',
           }),

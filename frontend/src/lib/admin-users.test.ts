@@ -4,7 +4,9 @@ const { apiFetch } = vi.hoisted(() => ({ apiFetch: vi.fn() }));
 
 vi.mock('./api-client', () => ({ apiFetch }));
 
-const { createAdminUser, listAdminUsers, updateAdminUser } = await import('./admin-users');
+const { createAdminUser, listAdminUsers, runAdminUserAction, updateAdminUser } = await import(
+  './admin-users'
+);
 
 describe('admin users client', () => {
   beforeEach(() => apiFetch.mockReset());
@@ -81,6 +83,29 @@ describe('admin users client', () => {
     await expect(updateAdminUser(input)).resolves.toEqual(item);
     expect(apiFetch).toHaveBeenCalledWith('/admin/users', {
       method: 'PATCH',
+      body: JSON.stringify(input),
+    });
+  });
+
+  it('chạy thao tác tài khoản qua POST /admin/users/actions', async () => {
+    const item = {
+      id: 'user-1',
+      name: 'Test Employee',
+      email: 'test123@gmail.com',
+      departmentId: 'TECH',
+      roles: ['EMPLOYEE'],
+      status: 'DISABLED',
+      enabled: false,
+      createdAt: '',
+      updatedAt: '2026-06-30T05:36:48.000Z',
+    };
+    apiFetch.mockResolvedValue({ item });
+
+    const input = { email: 'test123@gmail.com', action: 'DISABLE' as const };
+
+    await expect(runAdminUserAction(input)).resolves.toEqual(item);
+    expect(apiFetch).toHaveBeenCalledWith('/admin/users/actions', {
+      method: 'POST',
       body: JSON.stringify(input),
     });
   });

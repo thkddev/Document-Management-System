@@ -1,6 +1,8 @@
 import {
   AdminAddUserToGroupCommand,
   AdminCreateUserCommand,
+  AdminDisableUserCommand,
+  AdminEnableUserCommand,
   AdminListGroupsForUserCommand,
   AdminRemoveUserFromGroupCommand,
   AdminSetUserPasswordCommand,
@@ -10,7 +12,9 @@ import {
   type UserType,
 } from '@aws-sdk/client-cognito-identity-provider';
 import {
+  adminUserActions,
   userRoles,
+  type AdminUserActionRequest,
   type AdminUserSummary,
   type CreateAdminUserRequest,
   type DocumentPrincipal,
@@ -29,6 +33,11 @@ export interface CreateAdminUserDependencies {
 }
 
 export interface UpdateAdminUserDependencies {
+  cognito: Pick<CognitoIdentityProviderClient, 'send'>;
+  userPoolId: string;
+}
+
+export interface AdminUserActionDependencies {
   cognito: Pick<CognitoIdentityProviderClient, 'send'>;
   userPoolId: string;
 }
@@ -219,6 +228,69 @@ export async function updateAdminUser(
   }
 }
 
+export async function runAdminUserAction(
+  principal: DocumentPrincipal,
+  request: AdminUserActionRequest,
+  deps: AdminUserActionDependencies,
+): Promise<AdminUserSummary> {
+  if (!canListAdminUsers(principal)) {
+    throw new AdminUsersForbiddenError();
+  }
+
+  const normalized = normalizeAdminUserActionRequest(request);
+  if (
+    normalized.action === 'DISABLE' &&
+    principal.email?.toLocaleLowerCase('vi') === normalized.email
+  ) {
+    throw new AdminUserValidationError([
+      { field: 'email', message: 'Bạn không thể tự khóa tài khoản đang đăng nhập.' },
+    ]);
+  }
+
+  try {
+    if (normalized.action === 'DISABLE') {
+      await deps.cognito.send(
+        new AdminDisableUserCommand({
+          UserPoolId: deps.userPoolId,
+          Username: normalized.email,
+        }),
+      );
+      return actionSummary(normalized.email, false, 'DISABLED');
+    }
+
+    if (normalized.action === 'ENABLE') {
+      await deps.cognito.send(
+        new AdminEnableUserCommand({
+          UserPoolId: deps.userPoolId,
+          Username: normalized.email,
+        }),
+      );
+      return actionSummary(normalized.email, true, 'ENABLED');
+    }
+
+    await deps.cognito.send(
+      new AdminSetUserPasswordCommand({
+        UserPoolId: deps.userPoolId,
+        Username: normalized.email,
+        Password: normalized.password,
+        Permanent: true,
+      }),
+    );
+    return actionSummary(normalized.email, true, 'PASSWORD_RESET');
+  } catch (err) {
+    const errorName = err instanceof Error ? err.name : '';
+    if (errorName === 'UserNotFoundException') {
+      throw new AdminUserNotFoundError(normalized.email);
+    }
+    if (errorName === 'InvalidPasswordException') {
+      throw new AdminUserValidationError([
+        { field: 'password', message: 'Mật khẩu không đúng chính sách Cognito.' },
+      ]);
+    }
+    throw err;
+  }
+}
+
 export class AdminUsersForbiddenError extends Error {
   constructor() {
     super('Tài khoản không có quyền xem danh sách người dùng.');
@@ -306,6 +378,43 @@ function normalizeUpdateAdminUserRequest(request: UpdateAdminUserRequest): Updat
   }
 
   return { email, departmentId, role };
+}
+
+function normalizeAdminUserActionRequest(request: AdminUserActionRequest): Required<AdminUserActionRequest> {
+  const issues: AdminUserValidationIssue[] = [];
+  const email = typeof request.email === 'string' ? request.email.trim().toLocaleLowerCase('vi') : '';
+  const action = request.action;
+  const password = typeof request.password === 'string' ? request.password : '';
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    issues.push({ field: 'email', message: 'Email không hợp lệ.' });
+  }
+  if (!adminUserActions.includes(action)) {
+    issues.push({ field: 'action', message: 'Thao tác tài khoản không hợp lệ.' });
+  }
+  if (action === 'RESET_PASSWORD' && password.length < 8) {
+    issues.push({ field: 'password', message: 'Mật khẩu phải có ít nhất 8 ký tự.' });
+  }
+
+  if (issues.length > 0) {
+    throw new AdminUserValidationError(issues);
+  }
+
+  return { email, action, password };
+}
+
+function actionSummary(email: string, enabled: boolean, status: string): AdminUserSummary {
+  return {
+    id: email,
+    name: email,
+    email,
+    departmentId: 'UNKNOWN',
+    roles: [],
+    status,
+    enabled,
+    createdAt: '',
+    updatedAt: new Date().toISOString(),
+  };
 }
 
 function toAdminUserSummary(user: UserType, rawGroups: Array<string | undefined>): AdminUserSummary {

@@ -31,6 +31,7 @@ import { useAuth } from './features/auth/AuthContext';
 import {
   createAdminUser,
   listAdminUsers,
+  runAdminUserAction,
   updateAdminUser,
   type AdminUserRole,
   type AdminUserSummary,
@@ -623,6 +624,12 @@ export function App() {
   const [editUserSubmitting, setEditUserSubmitting] = useState(false);
   const [editUserError, setEditUserError] = useState('');
   const [editUserMessage, setEditUserMessage] = useState('');
+  const [adminAccountActionMessage, setAdminAccountActionMessage] = useState('');
+  const [adminAccountActionError, setAdminAccountActionError] = useState('');
+  const [adminAccountActionEmail, setAdminAccountActionEmail] = useState<string | null>(null);
+  const [resetPasswordUser, setResetPasswordUser] = useState<AdminUserRow | null>(null);
+  const [resetPasswordValue, setResetPasswordValue] = useState('');
+  const [resetPasswordSubmitting, setResetPasswordSubmitting] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploadTitle, setUploadTitle] = useState('');
@@ -922,6 +929,70 @@ export function App() {
       }
     },
     [canManageSystem, editUserForm, refreshAdminUsers],
+  );
+
+  const runAccountStatusAction = useCallback(
+    async (user: AdminUserRow): Promise<void> => {
+      if (!canManageSystem) return;
+      const action = user.enabled ? 'DISABLE' : 'ENABLE';
+      setAdminAccountActionEmail(user.email);
+      setAdminAccountActionError('');
+      setAdminAccountActionMessage('');
+      try {
+        const updated = await runAdminUserAction({ email: user.email, action });
+        setAdminAccountActionMessage(
+          action === 'DISABLE'
+            ? `Đã khóa tài khoản ${updated.email}.`
+            : `Đã mở khóa tài khoản ${updated.email}.`,
+        );
+        await refreshAdminUsers();
+      } catch (err) {
+        setAdminAccountActionError(
+          err instanceof Error
+            ? err.message
+            : 'Không thể thực hiện thao tác tài khoản. Vui lòng thử lại.',
+        );
+      } finally {
+        setAdminAccountActionEmail(null);
+      }
+    },
+    [canManageSystem, refreshAdminUsers],
+  );
+
+  const closeResetPasswordModal = useCallback(() => {
+    if (resetPasswordSubmitting) return;
+    setResetPasswordUser(null);
+    setResetPasswordValue('');
+    setAdminAccountActionError('');
+  }, [resetPasswordSubmitting]);
+
+  const submitResetPassword = useCallback(
+    async (event: FormEvent<HTMLFormElement>): Promise<void> => {
+      event.preventDefault();
+      if (!canManageSystem || !resetPasswordUser) return;
+
+      setResetPasswordSubmitting(true);
+      setAdminAccountActionError('');
+      setAdminAccountActionMessage('');
+      try {
+        const updated = await runAdminUserAction({
+          email: resetPasswordUser.email,
+          action: 'RESET_PASSWORD',
+          password: resetPasswordValue,
+        });
+        setAdminAccountActionMessage(`Đã reset mật khẩu cho ${updated.email}.`);
+        setResetPasswordUser(null);
+        setResetPasswordValue('');
+        await refreshAdminUsers();
+      } catch (err) {
+        setAdminAccountActionError(
+          err instanceof Error ? err.message : 'Không thể reset mật khẩu. Vui lòng thử lại.',
+        );
+      } finally {
+        setResetPasswordSubmitting(false);
+      }
+    },
+    [canManageSystem, refreshAdminUsers, resetPasswordUser, resetPasswordValue],
   );
 
   useEffect(() => {
@@ -1744,6 +1815,16 @@ export function App() {
               {editUserMessage && (
                 <p className="admin-feedback admin-feedback--success">{editUserMessage}</p>
               )}
+              {adminAccountActionMessage && (
+                <p className="admin-feedback admin-feedback--success">
+                  {adminAccountActionMessage}
+                </p>
+              )}
+              {adminAccountActionError && (
+                <p className="document-load-error" role="alert">
+                  {adminAccountActionError}
+                </p>
+              )}
               {adminUsersError && (
                 <p className="document-load-error" role="alert">
                   {adminUsersError}
@@ -1836,10 +1917,36 @@ export function App() {
                       <button
                         className="quiet-button quiet-button--danger"
                         type="button"
-                        disabled
-                        title="Sẽ kết nối AWS Cognito ở P7.5"
+                        disabled={
+                          adminAccountActionEmail === user.email ||
+                          user.email === currentUser?.email
+                        }
+                        title={
+                          user.email === currentUser?.email
+                            ? 'Không thể tự khóa tài khoản đang đăng nhập'
+                            : user.enabled
+                              ? 'Khóa tài khoản'
+                              : 'Mở khóa tài khoản'
+                        }
+                        onClick={() => void runAccountStatusAction(user)}
                       >
-                        Khóa tài khoản
+                        {adminAccountActionEmail === user.email
+                          ? 'Đang xử lý'
+                          : user.enabled
+                            ? 'Khóa tài khoản'
+                            : 'Mở khóa'}
+                      </button>
+                      <button
+                        className="quiet-button"
+                        type="button"
+                        onClick={() => {
+                          setResetPasswordUser(user);
+                          setResetPasswordValue('');
+                          setAdminAccountActionError('');
+                          setAdminAccountActionMessage('');
+                        }}
+                      >
+                        Reset mật khẩu
                       </button>
                     </div>
                   </div>
@@ -2063,6 +2170,66 @@ export function App() {
                     type="button"
                     onClick={closeEditUserModal}
                     disabled={editUserSubmitting}
+                  >
+                    Hủy
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {resetPasswordUser && canManageSystem && (
+            <div className="share-modal-backdrop" role="presentation">
+              <form
+                className="share-modal admin-create-user-modal"
+                aria-labelledby="reset-password-heading"
+                onSubmit={(event) => void submitResetPassword(event)}
+              >
+                <button
+                  className="icon-button share-modal-close"
+                  type="button"
+                  onClick={closeResetPasswordModal}
+                  disabled={resetPasswordSubmitting}
+                  aria-label="Đóng reset mật khẩu"
+                  title="Đóng"
+                >
+                  <X size={18} />
+                </button>
+                <div className="share-modal-heading">
+                  <span>Quản trị Cognito</span>
+                  <h2 id="reset-password-heading">Reset mật khẩu</h2>
+                </div>
+                <div className="admin-create-user-grid">
+                  <label>
+                    <span>Người dùng</span>
+                    <input value={`${resetPasswordUser.name} · ${resetPasswordUser.email}`} disabled />
+                  </label>
+                  <label>
+                    <span>Mật khẩu mới</span>
+                    <input
+                      type="password"
+                      value={resetPasswordValue}
+                      onChange={(event) => setResetPasswordValue(event.target.value)}
+                      disabled={resetPasswordSubmitting}
+                      minLength={8}
+                      required
+                    />
+                  </label>
+                </div>
+                <div className="share-modal-actions">
+                  <button
+                    className="primary-action"
+                    type="submit"
+                    disabled={resetPasswordSubmitting}
+                  >
+                    <ShieldCheck size={18} />
+                    {resetPasswordSubmitting ? 'Đang reset...' : 'Reset mật khẩu'}
+                  </button>
+                  <button
+                    className="quiet-button"
+                    type="button"
+                    onClick={closeResetPasswordModal}
+                    disabled={resetPasswordSubmitting}
                   >
                     Hủy
                   </button>

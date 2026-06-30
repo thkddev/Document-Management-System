@@ -1,6 +1,8 @@
 import {
   AdminAddUserToGroupCommand,
   AdminCreateUserCommand,
+  AdminDisableUserCommand,
+  AdminEnableUserCommand,
   AdminListGroupsForUserCommand,
   AdminRemoveUserFromGroupCommand,
   AdminSetUserPasswordCommand,
@@ -10,9 +12,11 @@ import {
 import { describe, expect, it, vi } from 'vitest';
 import {
   AdminUserAlreadyExistsError,
+  AdminUserValidationError,
   AdminUsersForbiddenError,
   createAdminUser,
   listAdminUsers,
+  runAdminUserAction,
   updateAdminUser,
 } from '../src/services/admin-users.js';
 
@@ -193,5 +197,66 @@ describe('admin users service', () => {
     expect(send).toHaveBeenNthCalledWith(2, expect.any(AdminListGroupsForUserCommand));
     expect(send).toHaveBeenNthCalledWith(3, expect.any(AdminRemoveUserFromGroupCommand));
     expect(send).toHaveBeenNthCalledWith(4, expect.any(AdminAddUserToGroupCommand));
+  });
+
+  it('khóa và mở khóa tài khoản Cognito', async () => {
+    const send = vi.fn(async () => ({}));
+
+    await expect(
+      runAdminUserAction(
+        { userId: 'admin-1', email: 'admin@example.com', departmentId: 'TECH', roles: ['SYSTEM_ADMIN'] },
+        { email: 'user@example.com', action: 'DISABLE' },
+        { cognito: { send } as never, userPoolId: 'pool-1' },
+      ),
+    ).resolves.toMatchObject({ email: 'user@example.com', enabled: false, status: 'DISABLED' });
+
+    await expect(
+      runAdminUserAction(
+        { userId: 'admin-1', email: 'admin@example.com', departmentId: 'TECH', roles: ['SYSTEM_ADMIN'] },
+        { email: 'user@example.com', action: 'ENABLE' },
+        { cognito: { send } as never, userPoolId: 'pool-1' },
+      ),
+    ).resolves.toMatchObject({ email: 'user@example.com', enabled: true, status: 'ENABLED' });
+
+    expect(send).toHaveBeenNthCalledWith(1, expect.any(AdminDisableUserCommand));
+    expect(send).toHaveBeenNthCalledWith(2, expect.any(AdminEnableUserCommand));
+  });
+
+  it('reset mật khẩu permanent và không cho tự khóa tài khoản', async () => {
+    const send = vi.fn(async () => ({}));
+
+    await expect(
+      runAdminUserAction(
+        { userId: 'admin-1', email: 'admin@example.com', departmentId: 'TECH', roles: ['SYSTEM_ADMIN'] },
+        {
+          email: 'user@example.com',
+          action: 'RESET_PASSWORD',
+          password: 'Duy8112004.@A',
+        },
+        { cognito: { send } as never, userPoolId: 'pool-1' },
+      ),
+    ).resolves.toMatchObject({
+      email: 'user@example.com',
+      enabled: true,
+      status: 'PASSWORD_RESET',
+    });
+    expect(send).toHaveBeenCalledWith(expect.any(AdminSetUserPasswordCommand));
+
+    const selfLockPromise = runAdminUserAction(
+      { userId: 'admin-1', email: 'admin@example.com', departmentId: 'TECH', roles: ['SYSTEM_ADMIN'] },
+      { email: 'admin@example.com', action: 'DISABLE' },
+      { cognito: { send } as never, userPoolId: 'pool-1' },
+    );
+
+    await expect(selfLockPromise).rejects.toBeInstanceOf(AdminUserValidationError);
+    await expect(
+      runAdminUserAction(
+        { userId: 'admin-1', email: 'admin@example.com', departmentId: 'TECH', roles: ['SYSTEM_ADMIN'] },
+        { email: 'admin@example.com', action: 'DISABLE' },
+        { cognito: { send } as never, userPoolId: 'pool-1' },
+      ),
+    ).rejects.toMatchObject({
+      issues: [{ field: 'email', message: 'Bạn không thể tự khóa tài khoản đang đăng nhập.' }],
+    });
   });
 });

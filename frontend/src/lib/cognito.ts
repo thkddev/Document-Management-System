@@ -47,6 +47,27 @@ export class AuthError extends Error {
   }
 }
 
+export function mapCognitoAuthFailure(err: { code?: string; message?: string }): AuthError {
+  const code = err.code ?? 'UnknownError';
+  const detail = err.message?.toLocaleLowerCase('en') ?? '';
+  let message = 'Đăng nhập thất bại. Vui lòng thử lại.';
+
+  if (code === 'UserDisabledException' || detail.includes('disabled')) {
+    message = 'Tài khoản đã bị khóa. Vui lòng liên hệ quản trị viên.';
+  } else if (code === 'NotAuthorizedException') {
+    message = 'Email hoặc mật khẩu không đúng.';
+  } else if (code === 'UserNotFoundException') {
+    // Trả cùng message để không tiết lộ user có tồn tại hay không
+    message = 'Email hoặc mật khẩu không đúng.';
+  } else if (code === 'UserNotConfirmedException') {
+    message = 'Tài khoản chưa được xác nhận. Liên hệ quản trị viên.';
+  } else if (code === 'PasswordResetRequiredException') {
+    message = 'Mật khẩu cần được đặt lại. Liên hệ quản trị viên.';
+  }
+
+  return new AuthError(message, code);
+}
+
 /** Đăng nhập bằng email và mật khẩu. Trả ID token khi thành công. */
 export async function signIn(email: string, password: string): Promise<SignInResult> {
   return new Promise((resolve, reject) => {
@@ -66,21 +87,7 @@ export async function signIn(email: string, password: string): Promise<SignInRes
         });
       },
       onFailure(err: { code?: string; message?: string }) {
-        const code = err.code ?? 'UnknownError';
-        let message = 'Đăng nhập thất bại. Vui lòng thử lại.';
-
-        if (code === 'NotAuthorizedException') {
-          message = 'Email hoặc mật khẩu không đúng.';
-        } else if (code === 'UserNotFoundException') {
-          // Trả cùng message để không tiết lộ user có tồn tại hay không
-          message = 'Email hoặc mật khẩu không đúng.';
-        } else if (code === 'UserNotConfirmedException') {
-          message = 'Tài khoản chưa được xác nhận. Liên hệ quản trị viên.';
-        } else if (code === 'PasswordResetRequiredException') {
-          message = 'Mật khẩu cần được đặt lại. Liên hệ quản trị viên.';
-        }
-
-        reject(new AuthError(message, code));
+        reject(mapCognitoAuthFailure(err));
       },
       newPasswordRequired() {
         reject(
