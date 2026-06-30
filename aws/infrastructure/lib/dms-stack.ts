@@ -253,7 +253,13 @@ export class DmsStack extends cdk.Stack {
     });
     adminUsersFunction.addToRolePolicy(
       new iam.PolicyStatement({
-        actions: ['cognito-idp:ListUsers', 'cognito-idp:AdminListGroupsForUser'],
+        actions: [
+          'cognito-idp:ListUsers',
+          'cognito-idp:AdminListGroupsForUser',
+          'cognito-idp:AdminCreateUser',
+          'cognito-idp:AdminSetUserPassword',
+          'cognito-idp:AdminAddUserToGroup',
+        ],
         resources: [userPool.userPoolArn],
       }),
     );
@@ -582,13 +588,17 @@ export class DmsStack extends cdk.Stack {
       authorizationType: apigateway.AuthorizationType.COGNITO,
     });
 
-    api.root
+    const adminUsersResource = api.root
       .addResource('admin')
-      .addResource('users')
-      .addMethod('GET', new apigateway.LambdaIntegration(adminUsersFunction), {
-        authorizer,
-        authorizationType: apigateway.AuthorizationType.COGNITO,
-      });
+      .addResource('users');
+    adminUsersResource.addMethod('GET', new apigateway.LambdaIntegration(adminUsersFunction), {
+      authorizer,
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+    });
+    adminUsersResource.addMethod('POST', new apigateway.LambdaIntegration(adminUsersFunction), {
+      authorizer,
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+    });
 
     const documentsResource = api.root.addResource('documents');
     documentsResource.addMethod('GET', new apigateway.LambdaIntegration(documentsFunction), {

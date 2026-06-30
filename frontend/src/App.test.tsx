@@ -4,6 +4,7 @@ import { MemoryRouter, useLocation } from 'react-router-dom';
 import { App } from './App';
 
 const mocks = vi.hoisted(() => ({
+  createAdminUser: vi.fn(),
   listAdminUsers: vi.fn(),
   listDocuments: vi.fn(),
   listPendingShareRequests: vi.fn(),
@@ -38,6 +39,7 @@ vi.mock('./lib/uploads', () => ({
 }));
 
 vi.mock('./lib/admin-users', () => ({
+  createAdminUser: mocks.createAdminUser,
   listAdminUsers: mocks.listAdminUsers,
 }));
 
@@ -192,6 +194,7 @@ describe('App', () => {
       roles: ['EMPLOYEE'],
     };
     mocks.listAdminUsers.mockReset();
+    mocks.createAdminUser.mockReset();
     mocks.listDocuments.mockReset();
     mocks.listPendingShareRequests.mockReset();
     mocks.approveShareRequest.mockReset();
@@ -200,6 +203,17 @@ describe('App', () => {
     mocks.createDownloadIntent.mockReset();
     mocks.triggerBrowserDownload.mockReset();
     mocks.listAdminUsers.mockResolvedValue(adminUsers);
+    mocks.createAdminUser.mockResolvedValue({
+      id: 'user-new',
+      name: 'Test Employee',
+      email: 'test123@gmail.com',
+      departmentId: 'TECH',
+      roles: ['EMPLOYEE'],
+      status: 'CONFIRMED',
+      enabled: true,
+      createdAt: '2026-06-30T04:36:48.000Z',
+      updatedAt: '2026-06-30T04:36:48.000Z',
+    });
     mocks.listDocuments.mockResolvedValue([readyDocument]);
     mocks.listPendingShareRequests.mockResolvedValue([]);
     mocks.approveShareRequest.mockResolvedValue({ shareRequestId: 'share-request-1', status: 'APPROVED' });
@@ -260,8 +274,69 @@ describe('App', () => {
     expect(screen.getByText('hanlap0908@gmail.com')).toBeInTheDocument();
     expect(mocks.listAdminUsers).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole('button', { name: 'Tải tài liệu lên' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Tạo người dùng' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Tạo người dùng' })).toBeEnabled();
     expect(screen.getByText(/được đọc trực tiếp từ AWS Cognito/)).toBeInTheDocument();
+  });
+
+  it('tạo người dùng Cognito từ trang quản trị', async () => {
+    mocks.currentUser = {
+      ...mocks.currentUser,
+      roles: ['SYSTEM_ADMIN'],
+      displayName: 'Duy Admin',
+    };
+    mocks.listAdminUsers
+      .mockResolvedValueOnce(adminUsers)
+      .mockResolvedValueOnce([
+        ...adminUsers,
+        {
+          id: 'user-new',
+          name: 'Test Employee',
+          email: 'test123@gmail.com',
+          departmentId: 'TECH',
+          roles: ['EMPLOYEE'],
+          status: 'CONFIRMED',
+          enabled: true,
+          createdAt: '2026-06-30T04:36:48.000Z',
+          updatedAt: '2026-06-30T04:36:48.000Z',
+        },
+      ]);
+    renderApp();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Quản trị' }));
+    await waitFor(() => expect(mocks.listAdminUsers).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tạo người dùng' }));
+    const dialog = screen.getByRole('form', { name: 'Tạo người dùng' });
+
+    fireEvent.change(within(dialog).getByLabelText('Email'), {
+      target: { value: 'test123@gmail.com' },
+    });
+    fireEvent.change(within(dialog).getByLabelText('Tên hiển thị'), {
+      target: { value: 'Test Employee' },
+    });
+    fireEvent.change(within(dialog).getByLabelText('Phòng ban'), {
+      target: { value: 'TECH' },
+    });
+    fireEvent.change(within(dialog).getByLabelText('Vai trò'), {
+      target: { value: 'EMPLOYEE' },
+    });
+    fireEvent.change(within(dialog).getByLabelText('Mật khẩu'), {
+      target: { value: 'Duy8112004.@A' },
+    });
+    fireEvent.submit(dialog);
+
+    await waitFor(() =>
+      expect(mocks.createAdminUser).toHaveBeenCalledWith({
+        email: 'test123@gmail.com',
+        name: 'Test Employee',
+        departmentId: 'TECH',
+        role: 'EMPLOYEE',
+        password: 'Duy8112004.@A',
+      }),
+    );
+    await screen.findByText('Đã tạo người dùng test123@gmail.com.');
+    expect(mocks.listAdminUsers).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole('form', { name: 'Tạo người dùng' })).not.toBeInTheDocument();
   });
 
   it('lọc người dùng quản trị theo từ khóa, phòng ban và vai trò', async () => {

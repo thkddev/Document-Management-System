@@ -473,38 +473,42 @@ Bảng này chỉ là baseline và phải được thay bằng permission matrix
 - Search pagination không mất hoặc lặp dữ liệu ngoài giới hạn chấp nhận.
 - Không lưu query nhạy cảm nếu policy chưa cho phép.
 
-## 12. Phase 7 - Sharing và Audit
+## 12. Phase 7 - Quản trị người dùng
 
-**Mục tiêu:** Chia sẻ có kiểm soát và truy vết được toàn bộ thao tác nhạy cảm.
+**Mục tiêu:** Cho System Admin quản lý tài khoản nội bộ từ trang Quản trị, với Cognito là nguồn dữ liệu thật và Lambda là nơi kiểm tra quyền.
 
-**Trạng thái:** `NOT_STARTED`
+**Trạng thái:** `IN_PROGRESS`
 
-### Sharing
+### Phạm vi đã hoàn thành
 
-- [ ] `GET /documents/{documentId}/shares`.
-- [ ] `POST /documents/{documentId}/shares`.
-- [ ] `DELETE /documents/{documentId}/shares/{shareId}`.
-- [ ] Hỗ trợ principal `USER` và `DEPARTMENT`.
-- [ ] Hỗ trợ permission `VIEW`, `DOWNLOAD`, `EDIT`, `SHARE`, `ADMIN` theo policy.
-- [ ] Hỗ trợ expiration và revoke.
-- [ ] Xử lý user chuyển phòng ban hoặc bị disabled.
+- [x] P7.1 - Tạo giao diện Quản trị người dùng nội bộ bằng dữ liệu mô phỏng.
+- [x] P7.2 - Đọc danh sách user thật từ AWS Cognito qua `GET /admin/users`.
+- [x] Chỉ System Admin được truy cập API quản trị người dùng.
+- [x] Hiển thị thống kê tổng người dùng, System Admin, Department Admin và Nhân viên.
+- [x] Thêm trạng thái loading, lỗi và nút làm mới danh sách người dùng.
 
-### Audit
+### P7.3 - Tạo user từ trang Quản trị
 
-- [ ] `GET /documents/{documentId}/audit-logs`.
-- [ ] Audit log append-only.
-- [ ] Ghi login, upload, download, version, share, revoke, permission, delete, restore.
-- [ ] Không ghi token, presigned URL hoặc nội dung tài liệu.
-- [ ] Phân quyền xem audit log.
-- [ ] Thiết lập retention.
+- [x] Tạo form hoặc modal tạo người dùng ngay trong trang Quản trị.
+- [x] Nhập email, tên hiển thị, phòng ban và vai trò ban đầu.
+- [x] Tạo user trong Cognito bằng Lambda backend, không gọi AWS SDK trực tiếp từ React.
+- [x] Gán group Cognito tương ứng với vai trò.
+- [x] Đặt mật khẩu do admin nhập theo policy Cognito.
+- [x] Hiển thị lỗi tiếng Việt rõ ràng khi email trùng, password sai policy hoặc thiếu quyền.
+- [x] Ghi log vận hành cho thao tác tạo user, không ghi mật khẩu hoặc token.
 
-### Test scenarios
+### Các bước sau P7.3
 
-- [ ] Share hết hạn.
-- [ ] Share bị thu hồi khi phiên đang mở.
-- [ ] Người nhận không được chia sẻ tiếp nếu thiếu `SHARE`.
-- [ ] User khác phòng ban truy cập tài liệu confidential.
-- [ ] System admin không mặc định đọc nội dung nếu policy không cho phép.
+- [ ] P7.4 - Đổi phòng ban và vai trò người dùng từ trang Quản trị.
+- [ ] P7.5 - Khóa, mở khóa và reset mật khẩu người dùng.
+- [ ] P7.6 - Đồng bộ trạng thái disabled, user chuyển phòng ban và ảnh hưởng tới quyền xem tài liệu.
+
+### Quality gate
+
+- React chỉ gửi yêu cầu quản trị; Cognito authorizer và Lambda vẫn quyết định quyền.
+- Không commit secret, password thật hoặc thông tin nhạy cảm.
+- API quản trị trả lỗi `401`, `403`, `409` và `500` rõ ràng.
+- Unit test bao phủ service Cognito, handler API và UI admin.
 
 ## 13. Phase 8 - Analytics MVP
 

@@ -1334,6 +1334,16 @@ select:focus-visible {
   font-weight: 700;
 }
 
+.admin-feedback {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.admin-feedback--success {
+  color: var(--green);
+}
+
 .admin-filters {
   display: grid;
   grid-template-columns: minmax(220px, 1fr) 180px 180px;
@@ -1548,6 +1558,7 @@ select:focus-visible {
   text-transform: uppercase;
 }
 
+.share-modal input,
 .share-modal select {
   min-height: 46px;
   padding: 0 14px;
@@ -1555,6 +1566,16 @@ select:focus-visible {
   border: 1px solid var(--ledger-blue);
   background: rgba(255, 255, 255, 0.5);
   font: inherit;
+}
+
+.admin-create-user-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.admin-create-user-password {
+  grid-column: 1 / -1;
 }
 
 .share-modal-actions {
@@ -2453,6 +2474,10 @@ select:focus-visible {
 
   .share-modal {
     padding: 24px 18px;
+  }
+
+  .admin-create-user-grid {
+    grid-template-columns: 1fr;
   }
 
   .share-modal-actions {

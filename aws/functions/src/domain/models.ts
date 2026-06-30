@@ -26,6 +26,18 @@ export interface ListAdminUsersResponse {
   items: AdminUserSummary[];
 }
 
+export interface CreateAdminUserRequest {
+  email: string;
+  name: string;
+  departmentId: string;
+  role: UserRole;
+  password: string;
+}
+
+export interface CreateAdminUserResponse {
+  item: AdminUserSummary;
+}
+
 export const documentClassifications = [
   'PUBLIC',
   'INTERNAL',

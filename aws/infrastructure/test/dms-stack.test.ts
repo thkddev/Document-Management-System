@@ -124,6 +124,10 @@ describe('DmsStack', () => {
       HttpMethod: 'GET',
       AuthorizationType: 'COGNITO_USER_POOLS',
     });
+    template.hasResourceProperties('AWS::ApiGateway::Method', {
+      HttpMethod: 'POST',
+      AuthorizationType: 'COGNITO_USER_POOLS',
+    });
     template.hasResourceProperties('AWS::IAM::Policy', {
       PolicyDocument: {
         Statement: Match.arrayWith([
@@ -131,6 +135,9 @@ describe('DmsStack', () => {
             Action: Match.arrayWith([
               'cognito-idp:ListUsers',
               'cognito-idp:AdminListGroupsForUser',
+              'cognito-idp:AdminCreateUser',
+              'cognito-idp:AdminSetUserPassword',
+              'cognito-idp:AdminAddUserToGroup',
             ]),
             Effect: 'Allow',
           }),

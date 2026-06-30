@@ -28,7 +28,12 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from './features/auth/AuthContext';
-import { listAdminUsers, type AdminUserRole, type AdminUserSummary } from './lib/admin-users';
+import {
+  createAdminUser,
+  listAdminUsers,
+  type AdminUserRole,
+  type AdminUserSummary,
+} from './lib/admin-users';
 import {
   createDepartmentShare,
   createDownloadIntent as requestDownloadIntent,
@@ -109,6 +114,14 @@ interface AdminUserRow {
   status: string;
   enabled: boolean;
   updatedAt: string;
+}
+
+interface CreateAdminUserForm {
+  email: string;
+  name: string;
+  departmentId: DepartmentId;
+  role: AdminRole;
+  password: string;
 }
 
 export const classificationLabels: Record<DocumentSummary['classification'], Classification> = {
@@ -270,6 +283,14 @@ const adminRoleFilters: Array<{ value: AdminRoleFilter; label: string }> = [
   { value: 'DEPARTMENT_ADMIN', label: 'Department Admin' },
   { value: 'EMPLOYEE', label: 'Nhân viên' },
 ];
+
+const defaultCreateAdminUserForm: CreateAdminUserForm = {
+  email: '',
+  name: '',
+  departmentId: 'TECH',
+  role: 'EMPLOYEE',
+  password: '',
+};
 
 const uploadClassifications: Array<{ value: DocumentClassification; label: string }> = [
   { value: 'INTERNAL', label: 'Nội bộ' },
@@ -580,6 +601,12 @@ export function App() {
   const [adminQuery, setAdminQuery] = useState('');
   const [adminDepartmentFilter, setAdminDepartmentFilter] = useState<'ALL' | DepartmentId>('ALL');
   const [adminRoleFilter, setAdminRoleFilter] = useState<AdminRoleFilter>('ALL');
+  const [createUserOpen, setCreateUserOpen] = useState(false);
+  const [createUserForm, setCreateUserForm] =
+    useState<CreateAdminUserForm>(defaultCreateAdminUserForm);
+  const [createUserSubmitting, setCreateUserSubmitting] = useState(false);
+  const [createUserError, setCreateUserError] = useState('');
+  const [createUserMessage, setCreateUserMessage] = useState('');
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploadTitle, setUploadTitle] = useState('');
@@ -795,6 +822,44 @@ export function App() {
       setAdminUsersLoading(false);
     }
   }, [canManageSystem]);
+
+  const closeCreateUserModal = useCallback(() => {
+    if (createUserSubmitting) return;
+    setCreateUserOpen(false);
+    setCreateUserForm(defaultCreateAdminUserForm);
+    setCreateUserError('');
+  }, [createUserSubmitting]);
+
+  const submitCreateUser = useCallback(
+    async (event: FormEvent<HTMLFormElement>): Promise<void> => {
+      event.preventDefault();
+      if (!canManageSystem) return;
+
+      setCreateUserSubmitting(true);
+      setCreateUserError('');
+      setCreateUserMessage('');
+      try {
+        const created = await createAdminUser({
+          email: createUserForm.email,
+          name: createUserForm.name,
+          departmentId: createUserForm.departmentId,
+          role: createUserForm.role,
+          password: createUserForm.password,
+        });
+        setCreateUserMessage(`Đã tạo người dùng ${created.email}.`);
+        setCreateUserOpen(false);
+        setCreateUserForm(defaultCreateAdminUserForm);
+        await refreshAdminUsers();
+      } catch (err) {
+        setCreateUserError(
+          err instanceof Error ? err.message : 'Không thể tạo người dùng. Vui lòng thử lại.',
+        );
+      } finally {
+        setCreateUserSubmitting(false);
+      }
+    },
+    [canManageSystem, createUserForm, refreshAdminUsers],
+  );
 
   useEffect(() => {
     void refreshDocuments(true);
@@ -1561,7 +1626,15 @@ export function App() {
                   <p className="section-kicker">Tổng quan tài khoản</p>
                   <h2 id="admin-heading">Người dùng nội bộ</h2>
                 </div>
-                <button className="primary-action" type="button" disabled title="Sẽ kết nối AWS Cognito ở P7.2">
+                <button
+                  className="primary-action"
+                  type="button"
+                  onClick={() => {
+                    setCreateUserOpen(true);
+                    setCreateUserMessage('');
+                    setCreateUserError('');
+                  }}
+                >
                   <FilePlus2 size={18} />
                   Tạo người dùng
                 </button>
@@ -1598,10 +1671,13 @@ export function App() {
               <div className="admin-placeholder-note">
                 <ShieldCheck size={17} />
                 <span>
-                  Dữ liệu người dùng được đọc trực tiếp từ AWS Cognito. Tạo user, đổi vai trò và khóa tài khoản
-                  sẽ được triển khai ở P7.3.
+                  Dữ liệu người dùng được đọc trực tiếp từ AWS Cognito. Đổi vai trò và khóa tài khoản
+                  sẽ được triển khai ở các bước sau.
                 </span>
               </div>
+              {createUserMessage && (
+                <p className="admin-feedback admin-feedback--success">{createUserMessage}</p>
+              )}
               {adminUsersError && (
                 <p className="document-load-error" role="alert">
                   {adminUsersError}
@@ -1702,6 +1778,132 @@ export function App() {
                 )}
               </div>
             </section>
+          )}
+
+          {createUserOpen && canManageSystem && (
+            <div className="share-modal-backdrop" role="presentation">
+              <form
+                className="share-modal admin-create-user-modal"
+                aria-labelledby="create-user-heading"
+                onSubmit={(event) => void submitCreateUser(event)}
+              >
+                <button
+                  className="icon-button share-modal-close"
+                  type="button"
+                  onClick={closeCreateUserModal}
+                  disabled={createUserSubmitting}
+                  aria-label="Đóng tạo người dùng"
+                  title="Đóng"
+                >
+                  <X size={18} />
+                </button>
+                <div className="share-modal-heading">
+                  <span>Quản trị Cognito</span>
+                  <h2 id="create-user-heading">Tạo người dùng</h2>
+                </div>
+                <div className="admin-create-user-grid">
+                  <label>
+                    <span>Email</span>
+                    <input
+                      type="email"
+                      value={createUserForm.email}
+                      onChange={(event) =>
+                        setCreateUserForm((form) => ({ ...form, email: event.target.value }))
+                      }
+                      disabled={createUserSubmitting}
+                      required
+                    />
+                  </label>
+                  <label>
+                    <span>Tên hiển thị</span>
+                    <input
+                      value={createUserForm.name}
+                      onChange={(event) =>
+                        setCreateUserForm((form) => ({ ...form, name: event.target.value }))
+                      }
+                      disabled={createUserSubmitting}
+                      required
+                    />
+                  </label>
+                  <label>
+                    <span>Phòng ban</span>
+                    <select
+                      value={createUserForm.departmentId}
+                      onChange={(event) =>
+                        setCreateUserForm((form) => ({
+                          ...form,
+                          departmentId: event.target.value as DepartmentId,
+                        }))
+                      }
+                      disabled={createUserSubmitting}
+                    >
+                      {departmentOptions.map((department) => (
+                        <option key={department.id} value={department.id}>
+                          {department.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    <span>Vai trò</span>
+                    <select
+                      value={createUserForm.role}
+                      onChange={(event) =>
+                        setCreateUserForm((form) => ({
+                          ...form,
+                          role: event.target.value as AdminRole,
+                        }))
+                      }
+                      disabled={createUserSubmitting}
+                    >
+                      {adminRoleFilters
+                        .filter((role) => role.value !== 'ALL')
+                        .map((role) => (
+                          <option key={role.value} value={role.value}>
+                            {role.label}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                  <label className="admin-create-user-password">
+                    <span>Mật khẩu</span>
+                    <input
+                      type="password"
+                      value={createUserForm.password}
+                      onChange={(event) =>
+                        setCreateUserForm((form) => ({ ...form, password: event.target.value }))
+                      }
+                      disabled={createUserSubmitting}
+                      minLength={8}
+                      required
+                    />
+                  </label>
+                </div>
+                {createUserError && (
+                  <p className="upload-status upload-status--error" role="alert">
+                    {createUserError}
+                  </p>
+                )}
+                <div className="share-modal-actions">
+                  <button
+                    className="primary-action"
+                    type="submit"
+                    disabled={createUserSubmitting}
+                  >
+                    <FilePlus2 size={18} />
+                    {createUserSubmitting ? 'Đang tạo...' : 'Tạo người dùng'}
+                  </button>
+                  <button
+                    className="quiet-button"
+                    type="button"
+                    onClick={closeCreateUserModal}
+                    disabled={createUserSubmitting}
+                  >
+                    Hủy
+                  </button>
+                </div>
+              </form>
+            </div>
           )}
 
           {isOverviewView && (

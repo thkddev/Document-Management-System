@@ -43,6 +43,34 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+    post:
+      operationId: createAdminUser
+      summary: Tạo người dùng Cognito cho System Admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAdminUserRequest'
+      responses:
+        '201':
+          description: Người dùng đã được tạo trong Cognito
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [item]
+                properties:
+                  item:
+                    $ref: '#/components/schemas/AdminUserSummary'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /documents:
     get:
       operationId: listDocuments
@@ -361,6 +389,25 @@ components:
         updatedAt:
           type: string
           format: date-time
+    CreateAdminUserRequest:
+      type: object
+      required: [email, name, departmentId, role, password]
+      properties:
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+          minLength: 1
+        departmentId:
+          type: string
+          minLength: 2
+        role:
+          type: string
+          enum: [EMPLOYEE, DEPARTMENT_ADMIN, SYSTEM_ADMIN]
+        password:
+          type: string
+          minLength: 8
     DocumentSummary:
       type: object
       required:

@@ -14,11 +14,31 @@ export interface AdminUserSummary {
   updatedAt: string;
 }
 
+export interface CreateAdminUserInput {
+  email: string;
+  name: string;
+  departmentId: string;
+  role: AdminUserRole;
+  password: string;
+}
+
 interface ListAdminUsersResponse {
   items: AdminUserSummary[];
+}
+
+interface CreateAdminUserResponse {
+  item: AdminUserSummary;
 }
 
 export async function listAdminUsers(): Promise<AdminUserSummary[]> {
   const response = await apiFetch<ListAdminUsersResponse>('/admin/users');
   return response.items;
+}
+
+export async function createAdminUser(input: CreateAdminUserInput): Promise<AdminUserSummary> {
+  const response = await apiFetch<CreateAdminUserResponse>('/admin/users', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+  return response.item;
 }

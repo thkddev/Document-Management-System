@@ -4,7 +4,7 @@ const { apiFetch } = vi.hoisted(() => ({ apiFetch: vi.fn() }));
 
 vi.mock('./api-client', () => ({ apiFetch }));
 
-const { listAdminUsers } = await import('./admin-users');
+const { createAdminUser, listAdminUsers } = await import('./admin-users');
 
 describe('admin users client', () => {
   beforeEach(() => apiFetch.mockReset());
@@ -27,5 +27,34 @@ describe('admin users client', () => {
 
     await expect(listAdminUsers()).resolves.toEqual(items);
     expect(apiFetch).toHaveBeenCalledWith('/admin/users');
+  });
+
+  it('tạo người dùng quản trị qua POST /admin/users', async () => {
+    const item = {
+      id: 'user-1',
+      name: 'Test Employee',
+      email: 'test123@gmail.com',
+      departmentId: 'TECH',
+      roles: ['EMPLOYEE'],
+      status: 'CONFIRMED',
+      enabled: true,
+      createdAt: '2026-06-30T04:36:48.000Z',
+      updatedAt: '2026-06-30T04:36:48.000Z',
+    };
+    apiFetch.mockResolvedValue({ item });
+
+    const input = {
+      email: 'test123@gmail.com',
+      name: 'Test Employee',
+      departmentId: 'TECH',
+      role: 'EMPLOYEE' as const,
+      password: 'Duy8112004.@A',
+    };
+
+    await expect(createAdminUser(input)).resolves.toEqual(item);
+    expect(apiFetch).toHaveBeenCalledWith('/admin/users', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
   });
 });
