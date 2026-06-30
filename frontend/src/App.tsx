@@ -73,6 +73,7 @@ type MainView =
   | 'ADMIN';
 type NotificationTone = 'INFO' | 'SUCCESS' | 'WARNING' | 'DANGER';
 type AdminRoleFilter = 'ALL' | 'SYSTEM_ADMIN' | 'DEPARTMENT_ADMIN' | 'EMPLOYEE';
+type AdminStatusFilter = 'ALL' | 'ACTIVE' | 'LOCKED';
 type AdminRole = AdminUserRole;
 
 interface AppNotification {
@@ -291,6 +292,12 @@ const adminRoleFilters: Array<{ value: AdminRoleFilter; label: string }> = [
   { value: 'SYSTEM_ADMIN', label: 'System Admin' },
   { value: 'DEPARTMENT_ADMIN', label: 'Department Admin' },
   { value: 'EMPLOYEE', label: 'Nhân viên' },
+];
+
+const adminStatusFilters: Array<{ value: AdminStatusFilter; label: string }> = [
+  { value: 'ALL', label: 'Tất cả trạng thái' },
+  { value: 'ACTIVE', label: 'Đang hoạt động' },
+  { value: 'LOCKED', label: 'Đã khóa' },
 ];
 
 const defaultCreateAdminUserForm: CreateAdminUserForm = {
@@ -614,6 +621,7 @@ export function App() {
   const [adminQuery, setAdminQuery] = useState('');
   const [adminDepartmentFilter, setAdminDepartmentFilter] = useState<'ALL' | DepartmentId>('ALL');
   const [adminRoleFilter, setAdminRoleFilter] = useState<AdminRoleFilter>('ALL');
+  const [adminStatusFilter, setAdminStatusFilter] = useState<AdminStatusFilter>('ALL');
   const [createUserOpen, setCreateUserOpen] = useState(false);
   const [createUserForm, setCreateUserForm] =
     useState<CreateAdminUserForm>(defaultCreateAdminUserForm);
@@ -780,15 +788,19 @@ export function App() {
             .toLocaleLowerCase('vi')
             .includes(normalized)) &&
         (adminDepartmentFilter === 'ALL' || user.departmentId === adminDepartmentFilter) &&
-        (adminRoleFilter === 'ALL' || user.roles.includes(adminRoleFilter)),
+        (adminRoleFilter === 'ALL' || user.roles.includes(adminRoleFilter)) &&
+        (adminStatusFilter === 'ALL' ||
+          (adminStatusFilter === 'ACTIVE' ? user.enabled : !user.enabled)),
     );
-  }, [adminDepartmentFilter, adminQuery, adminRoleFilter, adminUsers]);
+  }, [adminDepartmentFilter, adminQuery, adminRoleFilter, adminStatusFilter, adminUsers]);
   const adminStats = useMemo(
     () => ({
       total: adminUsers.length,
       systemAdmins: adminUsers.filter((user) => user.roles.includes('SYSTEM_ADMIN')).length,
       departmentAdmins: adminUsers.filter((user) => user.roles.includes('DEPARTMENT_ADMIN')).length,
       employees: adminUsers.filter((user) => user.roles.includes('EMPLOYEE')).length,
+      active: adminUsers.filter((user) => user.enabled).length,
+      locked: adminUsers.filter((user) => !user.enabled).length,
     }),
     [adminUsers],
   );
@@ -1800,13 +1812,21 @@ export function App() {
                   <span>Nhân viên</span>
                   <strong>{adminStats.employees}</strong>
                 </div>
+                <div className="admin-summary-card admin-summary-card--status">
+                  <span>Đang hoạt động</span>
+                  <strong>{adminStats.active}</strong>
+                </div>
+                <div className="admin-summary-card admin-summary-card--locked">
+                  <span>Đã khóa</span>
+                  <strong>{adminStats.locked}</strong>
+                </div>
               </div>
 
               <div className="admin-placeholder-note">
                 <ShieldCheck size={17} />
                 <span>
-                  Dữ liệu người dùng được đọc trực tiếp từ AWS Cognito. Đổi vai trò và khóa tài khoản
-                  sẽ được triển khai ở các bước sau.
+                  Dữ liệu người dùng được đọc trực tiếp từ AWS Cognito. Đổi vai trò, khóa/mở khóa
+                  và reset mật khẩu được xử lý qua API quản trị.
                 </span>
               </div>
               {createUserMessage && (
@@ -1870,6 +1890,21 @@ export function App() {
                     {adminRoleFilters.map((role) => (
                       <option key={role.value} value={role.value}>
                         {role.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>Trạng thái</span>
+                  <select
+                    value={adminStatusFilter}
+                    onChange={(event) =>
+                      setAdminStatusFilter(event.target.value as AdminStatusFilter)
+                    }
+                  >
+                    {adminStatusFilters.map((status) => (
+                      <option key={status.value} value={status.value}>
+                        {status.label}
                       </option>
                     ))}
                   </select>

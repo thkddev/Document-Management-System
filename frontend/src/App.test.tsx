@@ -304,6 +304,10 @@ describe('App', () => {
     expect(screen.queryByRole('button', { name: 'Tải tài liệu lên' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Tạo người dùng' })).toBeEnabled();
     expect(screen.getByText(/được đọc trực tiếp từ AWS Cognito/)).toBeInTheDocument();
+    expect(screen.getByText(/khóa\/mở khóa/)).toBeInTheDocument();
+    expect(screen.getByText('Tổng người dùng').nextElementSibling).toHaveTextContent('4');
+    expect(screen.getAllByText('Đang hoạt động')[0]?.nextElementSibling).toHaveTextContent('3');
+    expect(screen.getAllByText('Đã khóa')[0]?.nextElementSibling).toHaveTextContent('1');
   });
 
   it('tạo người dùng Cognito từ trang quản trị', async () => {
@@ -451,6 +455,44 @@ describe('App', () => {
     expect(mocks.listAdminUsers).toHaveBeenCalledTimes(2);
   });
 
+  it('mở khóa tài khoản người dùng từ trang quản trị', async () => {
+    mocks.currentUser = {
+      ...mocks.currentUser,
+      email: 'thkd811@gmail.com',
+      roles: ['SYSTEM_ADMIN'],
+      displayName: 'Duy Admin',
+    };
+    mocks.runAdminUserAction.mockResolvedValueOnce({
+      ...adminUsers[3],
+      enabled: true,
+      status: 'ENABLED',
+    });
+    mocks.listAdminUsers
+      .mockResolvedValueOnce(adminUsers)
+      .mockResolvedValueOnce([
+        adminUsers[0],
+        adminUsers[1],
+        adminUsers[2],
+        { ...adminUsers[3], enabled: true, status: 'ENABLED' },
+      ]);
+    renderApp();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Quản trị' }));
+    await waitFor(() => expect(mocks.listAdminUsers).toHaveBeenCalledTimes(1));
+    await screen.findByText('sale@example.com');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mở khóa' }));
+
+    await waitFor(() =>
+      expect(mocks.runAdminUserAction).toHaveBeenCalledWith({
+        email: 'sale@example.com',
+        action: 'ENABLE',
+      }),
+    );
+    await screen.findByText('Đã mở khóa tài khoản sale@example.com.');
+    expect(mocks.listAdminUsers).toHaveBeenCalledTimes(2);
+  });
+
   it('reset mật khẩu người dùng từ trang quản trị', async () => {
     mocks.currentUser = {
       ...mocks.currentUser,
@@ -515,6 +557,31 @@ describe('App', () => {
     });
     expect(screen.getByText('admin.hr@example.com')).toBeInTheDocument();
     expect(screen.queryByText('hanlap0908@gmail.com')).not.toBeInTheDocument();
+  });
+
+  it('lọc người dùng quản trị theo trạng thái tài khoản', async () => {
+    mocks.currentUser = {
+      ...mocks.currentUser,
+      roles: ['SYSTEM_ADMIN'],
+      displayName: 'Duy Admin',
+    };
+    renderApp();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Quản trị' }));
+    await waitFor(() => expect(mocks.listAdminUsers).toHaveBeenCalled());
+    await screen.findByText('sale@example.com');
+
+    fireEvent.change(screen.getByLabelText('Trạng thái'), {
+      target: { value: 'LOCKED' },
+    });
+    expect(screen.getByText('sale@example.com')).toBeInTheDocument();
+    expect(screen.queryByText('hanlap0908@gmail.com')).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Trạng thái'), {
+      target: { value: 'ACTIVE' },
+    });
+    expect(screen.getByText('hanlap0908@gmail.com')).toBeInTheDocument();
+    expect(screen.queryByText('sale@example.com')).not.toBeInTheDocument();
   });
 
   it('hiển thị lỗi khi không tải được người dùng quản trị từ Cognito', async () => {

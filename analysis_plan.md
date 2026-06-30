@@ -517,7 +517,17 @@ Bảng này chỉ là baseline và phải được thay bằng permission matrix
 
 ### Các bước sau P7.5
 
-- [ ] P7.6 - Đồng bộ trạng thái disabled, user chuyển phòng ban và ảnh hưởng tới quyền xem tài liệu.
+### P7.6 - Đồng bộ trạng thái tài khoản trong trang Quản trị
+
+- [x] Hiển thị thống kê tài khoản đang hoạt động và đã khóa.
+- [x] Thêm bộ lọc trạng thái tài khoản trong danh sách người dùng.
+- [x] Giữ nhãn trạng thái từng dòng là `Đang hoạt động` hoặc `Đã khóa`.
+- [x] Làm mới danh sách người dùng sau thao tác khóa/mở khóa/reset mật khẩu.
+- [x] Sửa mô tả trang Quản trị để phản ánh chức năng Cognito hiện có.
+
+### Các bước sau P7.6
+
+- [ ] P7.7 - Đồng bộ ảnh hưởng của user đổi phòng ban hoặc bị khóa tới quyền xem tài liệu.
 
 ### Quality gate
 

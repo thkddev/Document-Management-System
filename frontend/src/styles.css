@@ -1294,7 +1294,7 @@ select:focus-visible {
 
 .admin-summary-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   border: 1px solid var(--rule);
 }
 
@@ -1322,6 +1322,14 @@ select:focus-visible {
   font-size: 30px;
 }
 
+.admin-summary-card--status strong {
+  color: var(--green);
+}
+
+.admin-summary-card--locked strong {
+  color: var(--red);
+}
+
 .admin-placeholder-note {
   display: flex;
   align-items: center;
@@ -1346,7 +1354,7 @@ select:focus-visible {
 
 .admin-filters {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) 180px 180px;
+  grid-template-columns: minmax(220px, 1fr) 180px 180px 180px;
   gap: 10px;
   align-items: end;
 }
@@ -2288,6 +2296,14 @@ select:focus-visible {
   .upload-panel,
   .upload-form {
     grid-template-columns: 1fr;
+  }
+
+  .admin-summary-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .admin-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .upload-status {
