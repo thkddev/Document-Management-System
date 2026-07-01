@@ -128,6 +128,27 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /admin/users/audit-events:
+    get:
+      operationId: listAdminAuditEvents
+      summary: Liệt kê 10 sự kiện quản trị người dùng gần nhất cho System Admin
+      responses:
+        '200':
+          description: Lịch sử thao tác quản trị người dùng
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AdminAuditEvent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /documents:
     get:
       operationId: listDocuments
@@ -492,6 +513,45 @@ components:
           type: string
           minLength: 8
           description: Bắt buộc khi action là RESET_PASSWORD.
+    AdminAuditEvent:
+      type: object
+      required: [eventId, action, actorId, targetEmail, outcome, occurredAt]
+      properties:
+        eventId:
+          type: string
+        action:
+          type: string
+          enum:
+            [
+              ADMIN_USER_CREATED,
+              ADMIN_USER_UPDATED,
+              ADMIN_USER_DISABLED,
+              ADMIN_USER_ENABLED,
+              ADMIN_USER_PASSWORD_RESET,
+            ]
+        actorId:
+          type: string
+        actorEmail:
+          type: string
+          format: email
+        targetEmail:
+          type: string
+          format: email
+        targetDepartmentId:
+          type: string
+        targetRoles:
+          type: array
+          items:
+            type: string
+            enum: [EMPLOYEE, DEPARTMENT_ADMIN, SYSTEM_ADMIN]
+        outcome:
+          type: string
+          enum: [SUCCESS, REJECTED, FAILED]
+        occurredAt:
+          type: string
+          format: date-time
+        requestId:
+          type: string
     DocumentSummary:
       type: object
       required:

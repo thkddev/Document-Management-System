@@ -1416,6 +1416,11 @@ select:focus-visible {
   border-top: 1px solid var(--ink);
 }
 
+.admin-audit-table {
+  display: grid;
+  border-top: 1px solid var(--ink);
+}
+
 .admin-user-row {
   display: grid;
   grid-template-columns: minmax(260px, 1.3fr) 130px minmax(210px, 1fr) 125px 220px;
@@ -1426,6 +1431,17 @@ select:focus-visible {
   border-bottom: 1px solid var(--rule);
 }
 
+.admin-audit-row {
+  display: grid;
+  grid-template-columns: 160px minmax(180px, 1fr) 180px minmax(240px, 1.2fr) 120px;
+  gap: 14px;
+  align-items: center;
+  min-height: 68px;
+  padding: 12px 8px;
+  border-bottom: 1px solid var(--rule);
+  font-size: 11px;
+}
+
 .admin-user-row--header {
   min-height: 36px;
   color: #778287;
@@ -1434,6 +1450,27 @@ select:focus-visible {
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.admin-audit-row--header {
+  min-height: 36px;
+  color: #778287;
+  font-family: 'Cascadia Mono', monospace;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.admin-audit-row strong,
+.admin-audit-row small {
+  display: block;
+}
+
+.admin-audit-row small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 10px;
 }
 
 .admin-user-identity {
@@ -2539,7 +2576,8 @@ select:focus-visible {
 
   .admin-summary-grid,
   .admin-filters,
-  .admin-user-row {
+  .admin-user-row,
+  .admin-audit-row {
     grid-template-columns: 1fr;
   }
 
@@ -2552,7 +2590,8 @@ select:focus-visible {
     border-bottom: 0;
   }
 
-  .admin-user-row--header {
+  .admin-user-row--header,
+  .admin-audit-row--header {
     display: none;
   }
 

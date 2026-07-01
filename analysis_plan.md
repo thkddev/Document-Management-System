@@ -536,7 +536,33 @@ Bảng này chỉ là baseline và phải được thay bằng permission matrix
 
 ### Các bước sau P7.7
 
-- [ ] P7.8 - Cân nhắc ép đăng xuất toàn cục khi khóa tài khoản hoặc đổi quyền nếu cần bảo mật tức thời.
+### P7.8 - Thu hồi phiên khi đổi quyền hoặc khóa tài khoản
+
+- [x] Gọi `AdminUserGlobalSignOut` sau khi khóa tài khoản.
+- [x] Gọi `AdminUserGlobalSignOut` sau khi reset mật khẩu.
+- [x] Gọi `AdminUserGlobalSignOut` sau khi đổi phòng ban hoặc vai trò.
+- [x] Không thu hồi phiên khi mở khóa tài khoản.
+- [x] Thêm IAM permission `cognito-idp:AdminUserGlobalSignOut` cho Lambda quản trị.
+- [x] Cập nhật thông báo UI để admin biết phiên cũ đã bị thu hồi.
+
+### Các bước sau P7.8
+
+### P7.9 - Lịch sử quản trị người dùng
+
+- [x] Ghi audit log có cấu trúc cho thao tác tạo user.
+- [x] Ghi audit log có cấu trúc cho thao tác đổi phòng ban/vai trò.
+- [x] Ghi audit log có cấu trúc cho thao tác khóa, mở khóa và reset mật khẩu.
+- [x] Lưu audit metadata trong DynamoDB, không lưu password, token hoặc dữ liệu nhạy cảm.
+- [x] Thêm API `GET /admin/users/audit-events` chỉ cho System Admin.
+- [x] Thêm trang UI riêng `Lịch sử quản trị`.
+- [x] Hiển thị 10 thao tác quản trị gần nhất với nhãn tiếng Việt.
+- [x] Thêm trạng thái loading, lỗi, empty state và nút làm mới.
+- [x] Cập nhật OpenAPI contract và CDK route/IAM tương ứng.
+- [x] Bổ sung unit test cho service audit, handler API, client API, UI và CDK.
+
+### Các bước sau P7.9
+
+- [ ] P7.10 - Cân nhắc bộ lọc/phân trang/export cho lịch sử quản trị nếu danh sách thao tác tăng nhiều.
 
 ### Quality gate
 
@@ -544,6 +570,7 @@ Bảng này chỉ là baseline và phải được thay bằng permission matrix
 - Không commit secret, password thật hoặc thông tin nhạy cảm.
 - API quản trị trả lỗi `401`, `403`, `409` và `500` rõ ràng.
 - Unit test bao phủ service Cognito, handler API và UI admin.
+- Audit log quản trị không chứa password, token hoặc presigned URL.
 
 ## 13. Phase 8 - Analytics MVP
 
@@ -730,4 +757,5 @@ DMS MVP chỉ được xem là hoàn thành khi:
 
 | Ngày       | Thay đổi                              | Người cập nhật |
 | ---------- | ------------------------------------- | -------------- |
+| 2026-07-01 | Hoàn tất P7.9 lịch sử quản trị người dùng | Codex          |
 | 2026-06-19 | Khởi tạo kế hoạch triển khai tổng thể | Codex          |

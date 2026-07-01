@@ -30,9 +30,11 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from './features/auth/AuthContext';
 import {
   createAdminUser,
+  listAdminAuditEvents,
   listAdminUsers,
   runAdminUserAction,
   updateAdminUser,
+  type AdminAuditEvent,
   type AdminUserRole,
   type AdminUserSummary,
 } from './lib/admin-users';
@@ -70,7 +72,8 @@ type MainView =
   | 'RECENT_DOCUMENTS'
   | 'BOOKMARKED_DOCUMENTS'
   | 'DEPARTMENT_DOCUMENTS'
-  | 'ADMIN';
+  | 'ADMIN'
+  | 'ADMIN_AUDIT';
 type NotificationTone = 'INFO' | 'SUCCESS' | 'WARNING' | 'DANGER';
 type AdminRoleFilter = 'ALL' | 'SYSTEM_ADMIN' | 'DEPARTMENT_ADMIN' | 'EMPLOYEE';
 type AdminStatusFilter = 'ALL' | 'ACTIVE' | 'LOCKED';
@@ -299,6 +302,14 @@ const adminStatusFilters: Array<{ value: AdminStatusFilter; label: string }> = [
   { value: 'ACTIVE', label: 'Đang hoạt động' },
   { value: 'LOCKED', label: 'Đã khóa' },
 ];
+
+const adminAuditActionLabels: Record<AdminAuditEvent['action'], string> = {
+  ADMIN_USER_CREATED: 'Tạo người dùng',
+  ADMIN_USER_UPDATED: 'Đổi phòng ban/vai trò',
+  ADMIN_USER_DISABLED: 'Khóa tài khoản',
+  ADMIN_USER_ENABLED: 'Mở khóa tài khoản',
+  ADMIN_USER_PASSWORD_RESET: 'Reset mật khẩu',
+};
 
 const defaultCreateAdminUserForm: CreateAdminUserForm = {
   email: '',
@@ -547,6 +558,18 @@ export function NavContent({
                   <span>Quản trị</span>
                 </button>
               </li>
+              <li>
+                <button
+                  className={activeView === 'ADMIN_AUDIT' ? 'nav-link is-active' : 'nav-link'}
+                  onClick={() => {
+                    onViewChange?.('ADMIN_AUDIT');
+                    onNavigate?.();
+                  }}
+                >
+                  <History size={18} strokeWidth={1.7} />
+                  <span>Lịch sử quản trị</span>
+                </button>
+              </li>
             </ul>
           </>
         )}
@@ -638,6 +661,9 @@ export function App() {
   const [resetPasswordUser, setResetPasswordUser] = useState<AdminUserRow | null>(null);
   const [resetPasswordValue, setResetPasswordValue] = useState('');
   const [resetPasswordSubmitting, setResetPasswordSubmitting] = useState(false);
+  const [adminAuditEvents, setAdminAuditEvents] = useState<AdminAuditEvent[]>([]);
+  const [adminAuditLoading, setAdminAuditLoading] = useState(false);
+  const [adminAuditError, setAdminAuditError] = useState('');
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploadTitle, setUploadTitle] = useState('');
@@ -696,6 +722,7 @@ export function App() {
   const isBookmarkedView = activeView === 'BOOKMARKED_DOCUMENTS';
   const isDepartmentView = activeView === 'DEPARTMENT_DOCUMENTS';
   const isAdminView = activeView === 'ADMIN';
+  const isAdminAuditView = activeView === 'ADMIN_AUDIT';
   const selectedDepartmentLabel =
     departmentOptions.find((department) => department.id === selectedDepartmentId)?.label ??
     'phòng ban';
@@ -710,7 +737,7 @@ export function App() {
           : 'Đang xem tất cả tài liệu';
   const pageKicker = isOverviewView
     ? 'Thứ sáu · 19 tháng 6'
-    : isAdminView
+    : isAdminView || isAdminAuditView
       ? 'Quản trị'
       : 'Kho tài liệu';
   const pageTitle = isOverviewView
@@ -723,6 +750,8 @@ export function App() {
           ? 'Đã đánh dấu'
           : isAdminView
             ? 'Quản trị hệ thống'
+          : isAdminAuditView
+            ? 'Lịch sử quản trị'
           : isDepartmentView
             ? `Tài liệu phòng ${selectedDepartmentLabel}`
           : 'Tất cả tài liệu';
@@ -736,6 +765,8 @@ export function App() {
           ? 'Các tài liệu bạn đã lưu lại để truy cập nhanh.'
           : isAdminView
             ? 'Theo dõi người dùng, phòng ban và vai trò từ AWS Cognito.'
+          : isAdminAuditView
+            ? 'Theo dõi các thao tác quản trị tài khoản nội bộ gần nhất.'
           : isDepartmentView
             ? `Danh sách tài liệu thuộc phòng ${selectedDepartmentLabel}.`
           : 'Danh sách tài liệu thật với bộ lọc, sắp xếp và phân trang tập trung.';
@@ -858,6 +889,25 @@ export function App() {
     }
   }, [canManageSystem]);
 
+  const refreshAdminAuditEvents = useCallback(async (): Promise<void> => {
+    if (!canManageSystem) {
+      setAdminAuditEvents([]);
+      setAdminAuditError('');
+      return;
+    }
+
+    setAdminAuditLoading(true);
+    try {
+      const items = await listAdminAuditEvents();
+      setAdminAuditEvents(items);
+      setAdminAuditError('');
+    } catch {
+      setAdminAuditError('Không thể tải lịch sử quản trị. Vui lòng thử lại.');
+    } finally {
+      setAdminAuditLoading(false);
+    }
+  }, [canManageSystem]);
+
   const closeCreateUserModal = useCallback(() => {
     if (createUserSubmitting) return;
     setCreateUserOpen(false);
@@ -930,7 +980,7 @@ export function App() {
           role: editUserForm.role,
         });
         setEditUserMessage(
-          `Đã cập nhật người dùng ${updated.email}. Quyền theo phòng ban/vai trò mới sẽ có hiệu lực sau khi người dùng đăng nhập lại.`,
+          `Đã cập nhật người dùng ${updated.email}. Phiên cũ đã bị thu hồi, người dùng cần đăng nhập lại để nhận quyền mới.`,
         );
         setEditUserForm(null);
         await refreshAdminUsers();
@@ -956,7 +1006,7 @@ export function App() {
         const updated = await runAdminUserAction({ email: user.email, action });
         setAdminAccountActionMessage(
           action === 'DISABLE'
-            ? `Đã khóa tài khoản ${updated.email}.`
+            ? `Đã khóa tài khoản ${updated.email} và thu hồi phiên đăng nhập hiện có.`
             : `Đã mở khóa tài khoản ${updated.email}.`,
         );
         await refreshAdminUsers();
@@ -994,7 +1044,9 @@ export function App() {
           action: 'RESET_PASSWORD',
           password: resetPasswordValue,
         });
-        setAdminAccountActionMessage(`Đã reset mật khẩu cho ${updated.email}.`);
+        setAdminAccountActionMessage(
+          `Đã reset mật khẩu cho ${updated.email} và thu hồi phiên đăng nhập hiện có.`,
+        );
         setResetPasswordUser(null);
         setResetPasswordValue('');
         await refreshAdminUsers();
@@ -1018,6 +1070,12 @@ export function App() {
       void refreshAdminUsers();
     }
   }, [canManageSystem, isAdminView, refreshAdminUsers]);
+
+  useEffect(() => {
+    if (isAdminAuditView && canManageSystem) {
+      void refreshAdminAuditEvents();
+    }
+  }, [canManageSystem, isAdminAuditView, refreshAdminAuditEvents]);
 
   useEffect(() => {
     if (!hasProcessingDocuments(documentSummaries)) return;
@@ -1681,7 +1739,7 @@ export function App() {
               <h1 id="page-title">{pageTitle}</h1>
               <p>{pageDescription}</p>
             </div>
-            {!isAdminView && (
+            {!isAdminView && !isAdminAuditView && (
               <button
                 className="primary-action"
                 onClick={() => {
@@ -1835,7 +1893,8 @@ export function App() {
                 <ShieldCheck size={16} />
                 <span>
                   Khi đổi phòng ban hoặc vai trò, quyền xem và tải tài liệu sẽ dùng thông tin mới
-                  sau lần đăng nhập tiếp theo của người dùng.
+                  sau lần đăng nhập tiếp theo của người dùng. Phiên cũ sẽ bị thu hồi khi lưu thay
+                  đổi hoặc khi khóa/reset mật khẩu.
                 </span>
               </div>
               {createUserMessage && (
@@ -2006,6 +2065,82 @@ export function App() {
             </section>
           )}
 
+          {isAdminAuditView && canManageSystem && (
+            <section className="admin-panel admin-audit-panel" aria-labelledby="admin-audit-heading">
+              <div className="admin-toolbar">
+                <div>
+                  <p className="section-kicker">Audit quản trị</p>
+                  <h2 id="admin-audit-heading">Lịch sử thao tác tài khoản</h2>
+                </div>
+                <button
+                  className="quiet-button"
+                  type="button"
+                  disabled={adminAuditLoading}
+                  onClick={() => void refreshAdminAuditEvents()}
+                >
+                  <RefreshCw size={16} />
+                  {adminAuditLoading ? 'Đang làm mới' : 'Làm mới'}
+                </button>
+              </div>
+
+              <div className="admin-placeholder-note">
+                <ShieldCheck size={17} />
+                <span>
+                  Lịch sử chỉ lưu metadata thao tác quản trị, không lưu mật khẩu, token hoặc dữ liệu
+                  nhạy cảm.
+                </span>
+              </div>
+
+              {adminAuditError && (
+                <p className="document-load-error" role="alert">
+                  {adminAuditError}
+                </p>
+              )}
+              {adminAuditLoading && (
+                <p className="document-view-context" role="status">
+                  Đang tải lịch sử quản trị...
+                </p>
+              )}
+
+              <div className="admin-audit-table" role="table" aria-label="Lịch sử quản trị">
+                <div className="admin-audit-row admin-audit-row--header" role="row">
+                  <span role="columnheader">Thời gian</span>
+                  <span role="columnheader">Người thực hiện</span>
+                  <span role="columnheader">Thao tác</span>
+                  <span role="columnheader">Tài khoản</span>
+                  <span role="columnheader">Kết quả</span>
+                </div>
+                {adminAuditEvents.map((event) => (
+                  <div className="admin-audit-row" role="row" key={event.eventId}>
+                    <span role="cell">{formatUpdatedAt(event.occurredAt)}</span>
+                    <span role="cell">{event.actorEmail || event.actorId}</span>
+                    <span role="cell">{adminAuditActionLabels[event.action]}</span>
+                    <span role="cell">
+                      <strong>{event.targetEmail}</strong>
+                      {(event.targetDepartmentId || event.targetRoles?.length) && (
+                        <small>
+                          {[event.targetDepartmentId, event.targetRoles?.map((role) => adminRoleLabels[role]).join(', ')]
+                            .filter(Boolean)
+                            .join(' · ')}
+                        </small>
+                      )}
+                    </span>
+                    <span className="admin-status admin-status--active" role="cell">
+                      {event.outcome === 'SUCCESS' ? 'Thành công' : event.outcome}
+                    </span>
+                  </div>
+                ))}
+                {!adminAuditLoading && adminAuditEvents.length === 0 && (
+                  <div className="empty-state">
+                    <History size={28} />
+                    <h3>Chưa có lịch sử quản trị</h3>
+                    <p>Các thao tác tạo user, đổi vai trò, khóa/mở khóa và reset mật khẩu sẽ xuất hiện tại đây.</p>
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
+
           {createUserOpen && canManageSystem && (
             <div className="share-modal-backdrop" role="presentation">
               <form
@@ -2155,7 +2290,7 @@ export function App() {
                 </div>
                 <p className="admin-modal-note">
                   Quyền xem và tải tài liệu của người dùng này sẽ được đồng bộ theo phòng ban/vai
-                  trò mới sau khi họ đăng xuất và đăng nhập lại.
+                  trò mới sau khi phiên cũ bị thu hồi và họ đăng nhập lại.
                 </p>
                 <div className="admin-create-user-grid">
                   <label>
@@ -2313,7 +2448,7 @@ export function App() {
           </div>
           )}
 
-          {!isAdminView && (
+          {!isAdminView && !isAdminAuditView && (
           <div className={isOverviewView ? 'content-grid' : 'content-grid content-grid--single'}>
             <section className="document-panel" aria-labelledby="recent-heading">
               <div className="panel-heading">

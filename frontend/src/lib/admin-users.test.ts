@@ -4,9 +4,13 @@ const { apiFetch } = vi.hoisted(() => ({ apiFetch: vi.fn() }));
 
 vi.mock('./api-client', () => ({ apiFetch }));
 
-const { createAdminUser, listAdminUsers, runAdminUserAction, updateAdminUser } = await import(
-  './admin-users'
-);
+const {
+  createAdminUser,
+  listAdminAuditEvents,
+  listAdminUsers,
+  runAdminUserAction,
+  updateAdminUser,
+} = await import('./admin-users');
 
 describe('admin users client', () => {
   beforeEach(() => apiFetch.mockReset());
@@ -108,5 +112,23 @@ describe('admin users client', () => {
       method: 'POST',
       body: JSON.stringify(input),
     });
+  });
+
+  it('fetches admin audit events', async () => {
+    const items = [
+      {
+        eventId: 'event-1',
+        action: 'ADMIN_USER_CREATED',
+        actorId: 'admin-1',
+        actorEmail: 'admin@example.com',
+        targetEmail: 'user@example.com',
+        outcome: 'SUCCESS',
+        occurredAt: '2026-07-01T05:00:00.000Z',
+      },
+    ];
+    apiFetch.mockResolvedValue({ items });
+
+    await expect(listAdminAuditEvents()).resolves.toEqual(items);
+    expect(apiFetch).toHaveBeenCalledWith('/admin/users/audit-events');
   });
 });

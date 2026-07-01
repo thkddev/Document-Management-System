@@ -7,6 +7,7 @@ import {
   AdminRemoveUserFromGroupCommand,
   AdminSetUserPasswordCommand,
   AdminUpdateUserAttributesCommand,
+  AdminUserGlobalSignOutCommand,
   ListUsersCommand,
   type CognitoIdentityProviderClient,
   type UserType,
@@ -208,6 +209,8 @@ export async function updateAdminUser(
       );
     }
 
+    await signOutUserSessions(deps, normalized.email);
+
     return {
       id: normalized.email,
       name: normalized.email,
@@ -255,6 +258,7 @@ export async function runAdminUserAction(
           Username: normalized.email,
         }),
       );
+      await signOutUserSessions(deps, normalized.email);
       return actionSummary(normalized.email, false, 'DISABLED');
     }
 
@@ -276,6 +280,7 @@ export async function runAdminUserAction(
         Permanent: true,
       }),
     );
+    await signOutUserSessions(deps, normalized.email);
     return actionSummary(normalized.email, true, 'PASSWORD_RESET');
   } catch (err) {
     const errorName = err instanceof Error ? err.name : '';
@@ -289,6 +294,18 @@ export async function runAdminUserAction(
     }
     throw err;
   }
+}
+
+async function signOutUserSessions(
+  deps: Pick<AdminUserActionDependencies, 'cognito' | 'userPoolId'>,
+  email: string,
+): Promise<void> {
+  await deps.cognito.send(
+    new AdminUserGlobalSignOutCommand({
+      UserPoolId: deps.userPoolId,
+      Username: email,
+    }),
+  );
 }
 
 export class AdminUsersForbiddenError extends Error {

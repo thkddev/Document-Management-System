@@ -62,6 +62,33 @@ export interface AdminUserActionResponse {
   item: AdminUserSummary;
 }
 
+export const adminAuditActions = [
+  'ADMIN_USER_CREATED',
+  'ADMIN_USER_UPDATED',
+  'ADMIN_USER_DISABLED',
+  'ADMIN_USER_ENABLED',
+  'ADMIN_USER_PASSWORD_RESET',
+] as const;
+
+export type AdminAuditAction = (typeof adminAuditActions)[number];
+
+export interface AdminAuditEvent {
+  eventId: string;
+  action: AdminAuditAction;
+  actorId: string;
+  actorEmail?: string;
+  targetEmail: string;
+  targetDepartmentId?: string;
+  targetRoles?: UserRole[];
+  outcome: AuditOutcome;
+  occurredAt: string;
+  requestId?: string;
+}
+
+export interface ListAdminAuditEventsResponse {
+  items: AdminAuditEvent[];
+}
+
 export const documentClassifications = [
   'PUBLIC',
   'INTERNAL',

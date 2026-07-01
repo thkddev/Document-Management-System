@@ -5,6 +5,7 @@ import { App } from './App';
 
 const mocks = vi.hoisted(() => ({
   createAdminUser: vi.fn(),
+  listAdminAuditEvents: vi.fn(),
   listAdminUsers: vi.fn(),
   runAdminUserAction: vi.fn(),
   updateAdminUser: vi.fn(),
@@ -42,6 +43,7 @@ vi.mock('./lib/uploads', () => ({
 
 vi.mock('./lib/admin-users', () => ({
   createAdminUser: mocks.createAdminUser,
+  listAdminAuditEvents: mocks.listAdminAuditEvents,
   listAdminUsers: mocks.listAdminUsers,
   runAdminUserAction: mocks.runAdminUserAction,
   updateAdminUser: mocks.updateAdminUser,
@@ -198,6 +200,7 @@ describe('App', () => {
       roles: ['EMPLOYEE'],
     };
     mocks.listAdminUsers.mockReset();
+    mocks.listAdminAuditEvents.mockReset();
     mocks.runAdminUserAction.mockReset();
     mocks.createAdminUser.mockReset();
     mocks.updateAdminUser.mockReset();
@@ -209,6 +212,19 @@ describe('App', () => {
     mocks.createDownloadIntent.mockReset();
     mocks.triggerBrowserDownload.mockReset();
     mocks.listAdminUsers.mockResolvedValue(adminUsers);
+    mocks.listAdminAuditEvents.mockResolvedValue([
+      {
+        eventId: 'event-1',
+        action: 'ADMIN_USER_CREATED',
+        actorId: 'admin-1',
+        actorEmail: 'admin@example.com',
+        targetEmail: 'test123@gmail.com',
+        targetDepartmentId: 'TECH',
+        targetRoles: ['EMPLOYEE'],
+        outcome: 'SUCCESS',
+        occurredAt: '2026-07-01T05:00:00.000Z',
+      },
+    ]);
     mocks.createAdminUser.mockResolvedValue({
       id: 'user-new',
       name: 'Test Employee',
@@ -305,7 +321,7 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: 'Tạo người dùng' })).toBeEnabled();
     expect(screen.getByText(/được đọc trực tiếp từ AWS Cognito/)).toBeInTheDocument();
     expect(screen.getByText(/khóa\/mở khóa/)).toBeInTheDocument();
-    expect(screen.getByText(/sau lần đăng nhập tiếp theo/)).toBeInTheDocument();
+    expect(screen.getByText(/Phiên cũ sẽ bị thu hồi/)).toBeInTheDocument();
     expect(screen.getByText('Tổng người dùng').nextElementSibling).toHaveTextContent('4');
     expect(screen.getAllByText('Đang hoạt động')[0]?.nextElementSibling).toHaveTextContent('3');
     expect(screen.getAllByText('Đã khóa')[0]?.nextElementSibling).toHaveTextContent('1');
@@ -401,7 +417,7 @@ describe('App', () => {
     expect(editButtons).toHaveLength(4);
     fireEvent.click(editButtons[1]!);
     const dialog = screen.getByRole('form', { name: 'Đổi vai trò' });
-    expect(within(dialog).getByText(/sau khi họ đăng xuất và đăng nhập lại/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/sau khi phiên cũ bị thu hồi/)).toBeInTheDocument();
 
     fireEvent.change(within(dialog).getByLabelText('Phòng ban'), {
       target: { value: 'TECH' },
@@ -419,7 +435,7 @@ describe('App', () => {
       }),
     );
     await screen.findByText(
-      'Đã cập nhật người dùng hanlap0908@gmail.com. Quyền theo phòng ban/vai trò mới sẽ có hiệu lực sau khi người dùng đăng nhập lại.',
+      'Đã cập nhật người dùng hanlap0908@gmail.com. Phiên cũ đã bị thu hồi, người dùng cần đăng nhập lại để nhận quyền mới.',
     );
     expect(mocks.listAdminUsers).toHaveBeenCalledTimes(2);
     expect(screen.queryByRole('form', { name: 'Đổi vai trò' })).not.toBeInTheDocument();
@@ -455,7 +471,9 @@ describe('App', () => {
         action: 'DISABLE',
       }),
     );
-    await screen.findByText('Đã khóa tài khoản hanlap0908@gmail.com.');
+    await screen.findByText(
+      'Đã khóa tài khoản hanlap0908@gmail.com và thu hồi phiên đăng nhập hiện có.',
+    );
     expect(mocks.listAdminUsers).toHaveBeenCalledTimes(2);
   });
 
@@ -524,7 +542,9 @@ describe('App', () => {
         password: 'Duy8112004.@A',
       }),
     );
-    await screen.findByText('Đã reset mật khẩu cho hanlap0908@gmail.com.');
+    await screen.findByText(
+      'Đã reset mật khẩu cho hanlap0908@gmail.com và thu hồi phiên đăng nhập hiện có.',
+    );
     expect(screen.queryByRole('form', { name: 'Reset mật khẩu' })).not.toBeInTheDocument();
   });
 
@@ -1616,4 +1636,30 @@ describe('App', () => {
     expect(screen.queryByRole('button', { name: 'Thông báo (1)' })).not.toBeInTheDocument();
   });
 
+  it('hiển thị trang lịch sử quản trị riêng cho System Admin', async () => {
+    mocks.currentUser = {
+      ...mocks.currentUser,
+      roles: ['SYSTEM_ADMIN'],
+      displayName: 'Duy Admin',
+    };
+    renderApp();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Lịch sử quản trị' }));
+
+    expect(screen.getByRole('heading', { name: 'Lịch sử quản trị' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Lịch sử thao tác tài khoản' })).toBeInTheDocument();
+    await waitFor(() => expect(mocks.listAdminAuditEvents).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText('Tạo người dùng')).toBeInTheDocument();
+    expect(screen.getByText('admin@example.com')).toBeInTheDocument();
+    expect(screen.getByText('test123@gmail.com')).toBeInTheDocument();
+    expect(screen.getByText('Thành công')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Tải tài liệu lên' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Kho tài liệu')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Tất cả tài liệu' })).not.toBeInTheDocument();
+
+    const auditPanel = screen.getByRole('table', { name: 'Lịch sử quản trị' }).closest('section');
+    if (!auditPanel) throw new Error('Admin audit panel was not rendered');
+    fireEvent.click(within(auditPanel).getByRole('button', { name: 'Làm mới' }));
+    await waitFor(() => expect(mocks.listAdminAuditEvents).toHaveBeenCalledTimes(2));
+  });
 });

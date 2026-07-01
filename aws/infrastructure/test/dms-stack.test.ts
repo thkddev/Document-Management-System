@@ -117,7 +117,10 @@ describe('DmsStack', () => {
       Handler: 'handlers/admin-users.handler',
       Runtime: 'nodejs22.x',
       Environment: {
-        Variables: Match.objectLike({ USER_POOL_ID: Match.anyValue() }),
+        Variables: Match.objectLike({
+          TABLE_NAME: Match.anyValue(),
+          USER_POOL_ID: Match.anyValue(),
+        }),
       },
     });
     template.hasResourceProperties('AWS::ApiGateway::Method', {
@@ -146,6 +149,7 @@ describe('DmsStack', () => {
               'cognito-idp:AdminUpdateUserAttributes',
               'cognito-idp:AdminDisableUser',
               'cognito-idp:AdminEnableUser',
+              'cognito-idp:AdminUserGlobalSignOut',
             ]),
             Effect: 'Allow',
           }),

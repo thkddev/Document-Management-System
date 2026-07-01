@@ -1,6 +1,8 @@
 import { CognitoIdentityProviderClient } from '@aws-sdk/client-cognito-identity-provider';
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import type { APIGatewayProxyHandler, APIGatewayProxyResult } from 'aws-lambda';
 import type {
+  AdminAuditAction,
   AdminUserActionRequest,
   CreateAdminUserRequest,
   UpdateAdminUserRequest,
@@ -17,8 +19,10 @@ import {
   runAdminUserAction,
   updateAdminUser,
 } from '../services/admin-users.js';
+import { listAdminAuditEvents, writeAdminAuditEvent } from '../services/admin-audit.js';
 
 const cognito = new CognitoIdentityProviderClient({});
+const dynamodb = new DynamoDBClient({});
 
 function parseBody(body: string | null): unknown {
   if (!body) return {};
@@ -63,6 +67,12 @@ function parseAdminUserActionRequest(body: unknown): AdminUserActionRequest {
   return request;
 }
 
+function adminAuditActionForRequest(action: AdminUserActionRequest['action']): AdminAuditAction {
+  if (action === 'DISABLE') return 'ADMIN_USER_DISABLED';
+  if (action === 'ENABLE') return 'ADMIN_USER_ENABLED';
+  return 'ADMIN_USER_PASSWORD_RESET';
+}
+
 export const handler: APIGatewayProxyHandler = async (event): Promise<APIGatewayProxyResult> => {
   const requestId = event.requestContext.requestId;
   const principal = documentPrincipalFromClaims(event.requestContext.authorizer?.claims);
@@ -90,8 +100,30 @@ export const handler: APIGatewayProxyHandler = async (event): Promise<APIGateway
       requestId,
     });
   }
+  if (!process.env.TABLE_NAME) {
+    return errorResponse(500, {
+      code: 'CONFIGURATION_ERROR',
+      message: 'Dịch vụ quản trị chưa được cấu hình bảng dữ liệu.',
+      requestId,
+    });
+  }
 
   try {
+    if (event.resource === '/admin/users/audit-events') {
+      if (event.httpMethod !== 'GET') {
+        return errorResponse(405, {
+          code: 'METHOD_NOT_ALLOWED',
+          message: 'Phương thức không được hỗ trợ.',
+          requestId,
+        });
+      }
+      const items = await listAdminAuditEvents(principal, {
+        dynamodb,
+        tableName: process.env.TABLE_NAME,
+      });
+      return jsonResponse(200, { items });
+    }
+
     if (event.resource === '/admin/users/actions') {
       if (event.httpMethod !== 'POST') {
         return errorResponse(405, {
@@ -100,13 +132,20 @@ export const handler: APIGatewayProxyHandler = async (event): Promise<APIGateway
           requestId,
         });
       }
-      const item = await runAdminUserAction(
-        principal,
-        parseAdminUserActionRequest(parseBody(event.body)),
+      const request = parseAdminUserActionRequest(parseBody(event.body));
+      const item = await runAdminUserAction(principal, request, {
+        cognito,
+        userPoolId: process.env.USER_POOL_ID,
+      });
+      await writeAdminAuditEvent(
         {
-          cognito,
-          userPoolId: process.env.USER_POOL_ID,
+          action: adminAuditActionForRequest(request.action),
+          actor: principal,
+          targetEmail: item.email,
+          outcome: 'SUCCESS',
+          requestId,
         },
+        { dynamodb, tableName: process.env.TABLE_NAME },
       );
       console.info('ADMIN_USER_ACTION', {
         requestId,
@@ -126,6 +165,18 @@ export const handler: APIGatewayProxyHandler = async (event): Promise<APIGateway
           userPoolId: process.env.USER_POOL_ID,
         },
       );
+      await writeAdminAuditEvent(
+        {
+          action: 'ADMIN_USER_CREATED',
+          actor: principal,
+          targetEmail: item.email,
+          targetDepartmentId: item.departmentId,
+          targetRoles: item.roles,
+          outcome: 'SUCCESS',
+          requestId,
+        },
+        { dynamodb, tableName: process.env.TABLE_NAME },
+      );
       console.info('ADMIN_USER_CREATED', {
         requestId,
         actorId: principal.userId,
@@ -144,6 +195,18 @@ export const handler: APIGatewayProxyHandler = async (event): Promise<APIGateway
           cognito,
           userPoolId: process.env.USER_POOL_ID,
         },
+      );
+      await writeAdminAuditEvent(
+        {
+          action: 'ADMIN_USER_UPDATED',
+          actor: principal,
+          targetEmail: item.email,
+          targetDepartmentId: item.departmentId,
+          targetRoles: item.roles,
+          outcome: 'SUCCESS',
+          requestId,
+        },
+        { dynamodb, tableName: process.env.TABLE_NAME },
       );
       console.info('ADMIN_USER_UPDATED', {
         requestId,

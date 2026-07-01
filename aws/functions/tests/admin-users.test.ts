@@ -7,6 +7,7 @@ import {
   AdminRemoveUserFromGroupCommand,
   AdminSetUserPasswordCommand,
   AdminUpdateUserAttributesCommand,
+  AdminUserGlobalSignOutCommand,
   ListUsersCommand,
 } from '@aws-sdk/client-cognito-identity-provider';
 import { describe, expect, it, vi } from 'vitest';
@@ -169,7 +170,8 @@ describe('admin users service', () => {
       }
       if (
         command instanceof AdminRemoveUserFromGroupCommand ||
-        command instanceof AdminAddUserToGroupCommand
+        command instanceof AdminAddUserToGroupCommand ||
+        command instanceof AdminUserGlobalSignOutCommand
       ) {
         return {};
       }
@@ -197,6 +199,7 @@ describe('admin users service', () => {
     expect(send).toHaveBeenNthCalledWith(2, expect.any(AdminListGroupsForUserCommand));
     expect(send).toHaveBeenNthCalledWith(3, expect.any(AdminRemoveUserFromGroupCommand));
     expect(send).toHaveBeenNthCalledWith(4, expect.any(AdminAddUserToGroupCommand));
+    expect(send).toHaveBeenNthCalledWith(5, expect.any(AdminUserGlobalSignOutCommand));
   });
 
   it('khóa và mở khóa tài khoản Cognito', async () => {
@@ -219,7 +222,8 @@ describe('admin users service', () => {
     ).resolves.toMatchObject({ email: 'user@example.com', enabled: true, status: 'ENABLED' });
 
     expect(send).toHaveBeenNthCalledWith(1, expect.any(AdminDisableUserCommand));
-    expect(send).toHaveBeenNthCalledWith(2, expect.any(AdminEnableUserCommand));
+    expect(send).toHaveBeenNthCalledWith(2, expect.any(AdminUserGlobalSignOutCommand));
+    expect(send).toHaveBeenNthCalledWith(3, expect.any(AdminEnableUserCommand));
   });
 
   it('reset mật khẩu permanent và không cho tự khóa tài khoản', async () => {
@@ -241,6 +245,7 @@ describe('admin users service', () => {
       status: 'PASSWORD_RESET',
     });
     expect(send).toHaveBeenCalledWith(expect.any(AdminSetUserPasswordCommand));
+    expect(send).toHaveBeenCalledWith(expect.any(AdminUserGlobalSignOutCommand));
 
     const selfLockPromise = runAdminUserAction(
       { userId: 'admin-1', email: 'admin@example.com', departmentId: 'TECH', roles: ['SYSTEM_ADMIN'] },

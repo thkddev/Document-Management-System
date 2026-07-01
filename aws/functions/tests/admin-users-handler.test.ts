@@ -1,11 +1,20 @@
 import type { APIGatewayProxyEvent } from 'aws-lambda';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { createAdminUser, listAdminUsers, runAdminUserAction, updateAdminUser } = vi.hoisted(() => ({
+const {
+  createAdminUser,
+  listAdminAuditEvents,
+  listAdminUsers,
+  runAdminUserAction,
+  updateAdminUser,
+  writeAdminAuditEvent,
+} = vi.hoisted(() => ({
   createAdminUser: vi.fn(),
+  listAdminAuditEvents: vi.fn(),
   listAdminUsers: vi.fn(),
   runAdminUserAction: vi.fn(),
   updateAdminUser: vi.fn(),
+  writeAdminAuditEvent: vi.fn(),
 }));
 
 vi.mock('../src/services/admin-users.js', async (importOriginal) => ({
@@ -14,6 +23,11 @@ vi.mock('../src/services/admin-users.js', async (importOriginal) => ({
   listAdminUsers,
   runAdminUserAction,
   updateAdminUser,
+}));
+
+vi.mock('../src/services/admin-audit.js', () => ({
+  listAdminAuditEvents,
+  writeAdminAuditEvent,
 }));
 
 const { handler } = await import('../src/handlers/admin-users.js');
@@ -74,10 +88,14 @@ function createEvent(
 describe('GET /admin/users handler', () => {
   beforeEach(() => {
     process.env.USER_POOL_ID = 'pool-1';
+    process.env.TABLE_NAME = 'table-1';
     createAdminUser.mockReset();
+    listAdminAuditEvents.mockReset();
     listAdminUsers.mockReset();
     runAdminUserAction.mockReset();
     updateAdminUser.mockReset();
+    writeAdminAuditEvent.mockReset();
+    writeAdminAuditEvent.mockResolvedValue(true);
   });
 
   it('trả danh sách người dùng cho System Admin', async () => {
@@ -111,7 +129,12 @@ describe('GET /admin/users handler', () => {
   });
 
   it('tạo người dùng cho System Admin', async () => {
-    createAdminUser.mockResolvedValue({ id: 'user-1', email: 'test123@gmail.com' });
+    createAdminUser.mockResolvedValue({
+      id: 'user-1',
+      email: 'test123@gmail.com',
+      departmentId: 'TECH',
+      roles: ['EMPLOYEE'],
+    });
 
     const response = await handler(
       createEvent(
@@ -135,7 +158,12 @@ describe('GET /admin/users handler', () => {
 
     expect(response?.statusCode).toBe(201);
     expect(JSON.parse(response?.body ?? '{}')).toEqual({
-      item: { id: 'user-1', email: 'test123@gmail.com' },
+      item: {
+        id: 'user-1',
+        email: 'test123@gmail.com',
+        departmentId: 'TECH',
+        roles: ['EMPLOYEE'],
+      },
     });
     expect(createAdminUser).toHaveBeenCalledWith(
       { userId: 'admin-1', departmentId: 'TECH', roles: ['SYSTEM_ADMIN'] },
@@ -147,6 +175,18 @@ describe('GET /admin/users handler', () => {
         password: 'Duy8112004.@A',
       },
       expect.objectContaining({ userPoolId: 'pool-1' }),
+    );
+    expect(writeAdminAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'ADMIN_USER_CREATED',
+        actor: { userId: 'admin-1', departmentId: 'TECH', roles: ['SYSTEM_ADMIN'] },
+        targetEmail: 'test123@gmail.com',
+        targetDepartmentId: 'TECH',
+        targetRoles: ['EMPLOYEE'],
+        outcome: 'SUCCESS',
+        requestId: 'request-123',
+      }),
+      expect.objectContaining({ tableName: 'table-1' }),
     );
   });
 
@@ -177,7 +217,12 @@ describe('GET /admin/users handler', () => {
   });
 
   it('cập nhật phòng ban và vai trò người dùng cho System Admin', async () => {
-    updateAdminUser.mockResolvedValue({ id: 'user-1', email: 'test123@gmail.com' });
+    updateAdminUser.mockResolvedValue({
+      id: 'user-1',
+      email: 'test123@gmail.com',
+      departmentId: 'HR',
+      roles: ['DEPARTMENT_ADMIN'],
+    });
 
     const response = await handler(
       createEvent(
@@ -199,7 +244,12 @@ describe('GET /admin/users handler', () => {
 
     expect(response?.statusCode).toBe(200);
     expect(JSON.parse(response?.body ?? '{}')).toEqual({
-      item: { id: 'user-1', email: 'test123@gmail.com' },
+      item: {
+        id: 'user-1',
+        email: 'test123@gmail.com',
+        departmentId: 'HR',
+        roles: ['DEPARTMENT_ADMIN'],
+      },
     });
     expect(updateAdminUser).toHaveBeenCalledWith(
       { userId: 'admin-1', departmentId: 'TECH', roles: ['SYSTEM_ADMIN'] },
@@ -209,6 +259,17 @@ describe('GET /admin/users handler', () => {
         role: 'DEPARTMENT_ADMIN',
       },
       expect.objectContaining({ userPoolId: 'pool-1' }),
+    );
+    expect(writeAdminAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'ADMIN_USER_UPDATED',
+        targetEmail: 'test123@gmail.com',
+        targetDepartmentId: 'HR',
+        targetRoles: ['DEPARTMENT_ADMIN'],
+        outcome: 'SUCCESS',
+        requestId: 'request-123',
+      }),
+      expect.objectContaining({ tableName: 'table-1' }),
     );
   });
 
@@ -275,6 +336,70 @@ describe('GET /admin/users handler', () => {
       },
       { email: 'user@example.com', action: 'DISABLE' },
       expect.objectContaining({ userPoolId: 'pool-1' }),
+    );
+    expect(writeAdminAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'ADMIN_USER_DISABLED',
+        actor: {
+          userId: 'admin-1',
+          email: 'admin@example.com',
+          departmentId: 'TECH',
+          roles: ['SYSTEM_ADMIN'],
+        },
+        targetEmail: 'user@example.com',
+        outcome: 'SUCCESS',
+        requestId: 'request-123',
+      }),
+      expect.objectContaining({ tableName: 'table-1' }),
+    );
+  });
+
+  it('tráº£ lá»‹ch sá»­ quáº£n trá»‹ cho System Admin', async () => {
+    listAdminAuditEvents.mockResolvedValue([
+      {
+        eventId: 'event-1',
+        action: 'ADMIN_USER_CREATED',
+        actorId: 'admin-1',
+        actorEmail: 'admin@example.com',
+        targetEmail: 'user@example.com',
+        outcome: 'SUCCESS',
+        occurredAt: '2026-07-01T05:00:00.000Z',
+      },
+    ]);
+    const event = createEvent({
+      sub: 'admin-1',
+      email: 'admin@example.com',
+      'custom:departmentId': 'TECH',
+      'cognito:groups': 'SYSTEM_ADMIN',
+    });
+    event.resource = '/admin/users/audit-events';
+    event.path = '/admin/users/audit-events';
+    event.requestContext.resourcePath = '/admin/users/audit-events';
+
+    const response = await handler(event, {} as never, () => undefined);
+
+    expect(response?.statusCode).toBe(200);
+    expect(JSON.parse(response?.body ?? '{}')).toEqual({
+      items: [
+        {
+          eventId: 'event-1',
+          action: 'ADMIN_USER_CREATED',
+          actorId: 'admin-1',
+          actorEmail: 'admin@example.com',
+          targetEmail: 'user@example.com',
+          outcome: 'SUCCESS',
+          occurredAt: '2026-07-01T05:00:00.000Z',
+        },
+      ],
+    });
+    expect(listAdminAuditEvents).toHaveBeenCalledWith(
+      {
+        userId: 'admin-1',
+        email: 'admin@example.com',
+        departmentId: 'TECH',
+        roles: ['SYSTEM_ADMIN'],
+      },
+      expect.objectContaining({ tableName: 'table-1' }),
     );
   });
 });

@@ -246,11 +246,13 @@ export class DmsStack extends cdk.Stack {
         removalPolicy,
       }),
       environment: {
+        TABLE_NAME: table.tableName,
         USER_POOL_ID: userPool.userPoolId,
         ENVIRONMENT_NAME: props.environmentName,
         CORS_ALLOW_ORIGIN: corsAllowOrigin,
       },
     });
+    table.grantReadWriteData(adminUsersFunction);
     adminUsersFunction.addToRolePolicy(
       new iam.PolicyStatement({
         actions: [
@@ -263,6 +265,7 @@ export class DmsStack extends cdk.Stack {
           'cognito-idp:AdminUpdateUserAttributes',
           'cognito-idp:AdminDisableUser',
           'cognito-idp:AdminEnableUser',
+          'cognito-idp:AdminUserGlobalSignOut',
         ],
         resources: [userPool.userPoolArn],
       }),
@@ -610,6 +613,12 @@ export class DmsStack extends cdk.Stack {
     adminUsersResource
       .addResource('actions')
       .addMethod('POST', new apigateway.LambdaIntegration(adminUsersFunction), {
+        authorizer,
+        authorizationType: apigateway.AuthorizationType.COGNITO,
+      });
+    adminUsersResource
+      .addResource('audit-events')
+      .addMethod('GET', new apigateway.LambdaIntegration(adminUsersFunction), {
         authorizer,
         authorizationType: apigateway.AuthorizationType.COGNITO,
       });
