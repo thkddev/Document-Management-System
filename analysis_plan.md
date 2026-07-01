@@ -527,7 +527,16 @@ Bảng này chỉ là baseline và phải được thay bằng permission matrix
 
 ### Các bước sau P7.6
 
-- [ ] P7.7 - Đồng bộ ảnh hưởng của user đổi phòng ban hoặc bị khóa tới quyền xem tài liệu.
+### P7.7 - Đồng bộ hiệu lực quyền người dùng
+
+- [x] Hiển thị cảnh báo quyền theo phòng ban/vai trò mới có hiệu lực sau khi người dùng đăng nhập lại.
+- [x] Thêm ghi chú trong modal `Đổi vai trò`.
+- [x] Sau khi cập nhật user thành công, nhắc rõ người dùng cần đăng nhập lại để nhận quyền mới.
+- [x] Giữ phạm vi gọn, không đổi backend/API và không thu hồi token đang còn hạn.
+
+### Các bước sau P7.7
+
+- [ ] P7.8 - Cân nhắc ép đăng xuất toàn cục khi khóa tài khoản hoặc đổi quyền nếu cần bảo mật tức thời.
 
 ### Quality gate
 

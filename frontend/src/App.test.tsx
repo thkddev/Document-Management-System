@@ -305,6 +305,7 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: 'Tạo người dùng' })).toBeEnabled();
     expect(screen.getByText(/được đọc trực tiếp từ AWS Cognito/)).toBeInTheDocument();
     expect(screen.getByText(/khóa\/mở khóa/)).toBeInTheDocument();
+    expect(screen.getByText(/sau lần đăng nhập tiếp theo/)).toBeInTheDocument();
     expect(screen.getByText('Tổng người dùng').nextElementSibling).toHaveTextContent('4');
     expect(screen.getAllByText('Đang hoạt động')[0]?.nextElementSibling).toHaveTextContent('3');
     expect(screen.getAllByText('Đã khóa')[0]?.nextElementSibling).toHaveTextContent('1');
@@ -400,6 +401,7 @@ describe('App', () => {
     expect(editButtons).toHaveLength(4);
     fireEvent.click(editButtons[1]!);
     const dialog = screen.getByRole('form', { name: 'Đổi vai trò' });
+    expect(within(dialog).getByText(/sau khi họ đăng xuất và đăng nhập lại/)).toBeInTheDocument();
 
     fireEvent.change(within(dialog).getByLabelText('Phòng ban'), {
       target: { value: 'TECH' },
@@ -416,7 +418,9 @@ describe('App', () => {
         role: 'DEPARTMENT_ADMIN',
       }),
     );
-    await screen.findByText('Đã cập nhật người dùng hanlap0908@gmail.com.');
+    await screen.findByText(
+      'Đã cập nhật người dùng hanlap0908@gmail.com. Quyền theo phòng ban/vai trò mới sẽ có hiệu lực sau khi người dùng đăng nhập lại.',
+    );
     expect(mocks.listAdminUsers).toHaveBeenCalledTimes(2);
     expect(screen.queryByRole('form', { name: 'Đổi vai trò' })).not.toBeInTheDocument();
   });

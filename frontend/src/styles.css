@@ -1342,6 +1342,32 @@ select:focus-visible {
   font-weight: 700;
 }
 
+.admin-token-note,
+.admin-modal-note {
+  color: #56676c;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.admin-token-note {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 14px;
+  border-left: 3px solid var(--gold);
+  background: rgba(209, 132, 32, 0.08);
+  font-weight: 700;
+}
+
+.admin-token-note svg {
+  flex: 0 0 auto;
+  color: var(--gold);
+}
+
+.admin-modal-note {
+  margin: -4px 0 4px;
+}
+
 .admin-feedback {
   margin: 0;
   font-size: 11px;

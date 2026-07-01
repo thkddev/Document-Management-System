@@ -929,7 +929,9 @@ export function App() {
           departmentId: editUserForm.departmentId,
           role: editUserForm.role,
         });
-        setEditUserMessage(`Đã cập nhật người dùng ${updated.email}.`);
+        setEditUserMessage(
+          `Đã cập nhật người dùng ${updated.email}. Quyền theo phòng ban/vai trò mới sẽ có hiệu lực sau khi người dùng đăng nhập lại.`,
+        );
         setEditUserForm(null);
         await refreshAdminUsers();
       } catch (err) {
@@ -1829,6 +1831,13 @@ export function App() {
                   và reset mật khẩu được xử lý qua API quản trị.
                 </span>
               </div>
+              <div className="admin-token-note">
+                <ShieldCheck size={16} />
+                <span>
+                  Khi đổi phòng ban hoặc vai trò, quyền xem và tải tài liệu sẽ dùng thông tin mới
+                  sau lần đăng nhập tiếp theo của người dùng.
+                </span>
+              </div>
               {createUserMessage && (
                 <p className="admin-feedback admin-feedback--success">{createUserMessage}</p>
               )}
@@ -2144,6 +2153,10 @@ export function App() {
                   <span>Quản trị Cognito</span>
                   <h2 id="edit-user-heading">Đổi vai trò</h2>
                 </div>
+                <p className="admin-modal-note">
+                  Quyền xem và tải tài liệu của người dùng này sẽ được đồng bộ theo phòng ban/vai
+                  trò mới sau khi họ đăng xuất và đăng nhập lại.
+                </p>
                 <div className="admin-create-user-grid">
                   <label>
                     <span>Người dùng</span>
