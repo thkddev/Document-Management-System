@@ -185,6 +185,40 @@ const adminUsers = [
   },
 ];
 
+const adminAuditEvents = [
+  {
+    eventId: 'event-1',
+    action: 'ADMIN_USER_CREATED',
+    actorId: 'admin-1',
+    actorEmail: 'admin@example.com',
+    targetEmail: 'test123@gmail.com',
+    targetDepartmentId: 'TECH',
+    targetRoles: ['EMPLOYEE'],
+    outcome: 'SUCCESS',
+    occurredAt: '2026-07-01T05:00:00.000Z',
+  },
+  {
+    eventId: 'event-2',
+    action: 'ADMIN_USER_UPDATED',
+    actorId: 'admin-1',
+    actorEmail: 'admin@example.com',
+    targetEmail: 'hanlap0908@gmail.com',
+    targetDepartmentId: 'HR',
+    targetRoles: ['DEPARTMENT_ADMIN'],
+    outcome: 'SUCCESS',
+    occurredAt: '2026-07-01T05:05:00.000Z',
+  },
+  {
+    eventId: 'event-3',
+    action: 'ADMIN_USER_DISABLED',
+    actorId: 'admin-1',
+    actorEmail: 'admin@example.com',
+    targetEmail: 'lock@example.com',
+    outcome: 'SUCCESS',
+    occurredAt: '2026-07-01T05:10:00.000Z',
+  },
+];
+
 describe('App', () => {
   function LocationProbe() {
     const location = useLocation();
@@ -212,19 +246,7 @@ describe('App', () => {
     mocks.createDownloadIntent.mockReset();
     mocks.triggerBrowserDownload.mockReset();
     mocks.listAdminUsers.mockResolvedValue(adminUsers);
-    mocks.listAdminAuditEvents.mockResolvedValue([
-      {
-        eventId: 'event-1',
-        action: 'ADMIN_USER_CREATED',
-        actorId: 'admin-1',
-        actorEmail: 'admin@example.com',
-        targetEmail: 'test123@gmail.com',
-        targetDepartmentId: 'TECH',
-        targetRoles: ['EMPLOYEE'],
-        outcome: 'SUCCESS',
-        occurredAt: '2026-07-01T05:00:00.000Z',
-      },
-    ]);
+    mocks.listAdminAuditEvents.mockResolvedValue({ items: [adminAuditEvents[0]] });
     mocks.createAdminUser.mockResolvedValue({
       id: 'user-new',
       name: 'Test Employee',
@@ -1649,10 +1671,10 @@ describe('App', () => {
     expect(screen.getByRole('heading', { name: 'Lịch sử quản trị' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Lịch sử thao tác tài khoản' })).toBeInTheDocument();
     await waitFor(() => expect(mocks.listAdminAuditEvents).toHaveBeenCalledTimes(1));
-    expect(await screen.findByText('Tạo người dùng')).toBeInTheDocument();
+    expect(await screen.findAllByText('Tạo người dùng')).toHaveLength(2);
     expect(screen.getByText('admin@example.com')).toBeInTheDocument();
     expect(screen.getByText('test123@gmail.com')).toBeInTheDocument();
-    expect(screen.getByText('Thành công')).toBeInTheDocument();
+    expect(screen.getAllByText('Thành công')).toHaveLength(2);
     expect(screen.queryByRole('button', { name: 'Tải tài liệu lên' })).not.toBeInTheDocument();
     expect(screen.queryByText('Kho tài liệu')).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Tất cả tài liệu' })).not.toBeInTheDocument();
@@ -1661,5 +1683,111 @@ describe('App', () => {
     if (!auditPanel) throw new Error('Admin audit panel was not rendered');
     fireEvent.click(within(auditPanel).getByRole('button', { name: 'Làm mới' }));
     await waitFor(() => expect(mocks.listAdminAuditEvents).toHaveBeenCalledTimes(2));
+  });
+
+  it('lọc lịch sử quản trị theo email và thao tác', async () => {
+    mocks.currentUser = {
+      ...mocks.currentUser,
+      roles: ['SYSTEM_ADMIN'],
+      displayName: 'Duy Admin',
+    };
+    mocks.listAdminAuditEvents.mockImplementation(async (input) => {
+      if (input?.query === 'hihi') return { items: adminAuditEvents };
+      if (input?.query === 'hanlap') return { items: [adminAuditEvents[1]] };
+      if (input?.action === 'ADMIN_USER_DISABLED') return { items: [adminAuditEvents[2]] };
+      return { items: adminAuditEvents };
+    });
+    renderApp();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Lịch sử quản trị' }));
+    await screen.findByText('test123@gmail.com');
+
+    const searchInput = screen.getByPlaceholderText('Email người thực hiện hoặc tài khoản');
+    fireEvent.change(searchInput, {
+      target: { value: 'hihi' },
+    });
+
+    await waitFor(() =>
+      expect(mocks.listAdminAuditEvents).toHaveBeenLastCalledWith({
+        limit: 10,
+        query: 'hihi',
+      }),
+    );
+    expect(screen.getByText('Không có lịch sử phù hợp')).toBeInTheDocument();
+    expect(screen.queryByText('test123@gmail.com')).not.toBeInTheDocument();
+
+    fireEvent.change(searchInput, {
+      target: { value: 'hanlap' },
+    });
+
+    await waitFor(() =>
+      expect(mocks.listAdminAuditEvents).toHaveBeenLastCalledWith({
+        limit: 10,
+        query: 'hanlap',
+      }),
+    );
+    expect(screen.getByText('hanlap0908@gmail.com')).toBeInTheDocument();
+    expect(screen.queryByText('test123@gmail.com')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Xóa lọc' }));
+    fireEvent.change(screen.getByLabelText('Thao tác'), {
+      target: { value: 'ADMIN_USER_DISABLED' },
+    });
+
+    await waitFor(() =>
+      expect(mocks.listAdminAuditEvents).toHaveBeenLastCalledWith({
+        action: 'ADMIN_USER_DISABLED',
+        limit: 10,
+      }),
+    );
+    expect(screen.getByText('lock@example.com')).toBeInTheDocument();
+    expect(screen.getAllByText('Khóa tài khoản')).toHaveLength(2);
+    expect(screen.queryByText('hanlap0908@gmail.com')).not.toBeInTheDocument();
+  });
+
+  it('phân trang lịch sử quản trị khi có nhiều bản ghi', async () => {
+    mocks.currentUser = {
+      ...mocks.currentUser,
+      roles: ['SYSTEM_ADMIN'],
+      displayName: 'Duy Admin',
+    };
+    const firstPage = Array.from({ length: 10 }, (_, index) => ({
+        ...adminAuditEvents[0],
+        eventId: `event-page-${index + 1}`,
+        targetEmail: `audit-${String(index + 1).padStart(2, '0')}@example.com`,
+        occurredAt: `2026-07-01T05:${String(index).padStart(2, '0')}:00.000Z`,
+    }));
+    const secondPage = Array.from({ length: 2 }, (_, index) => ({
+      ...adminAuditEvents[0],
+      eventId: `event-page-${index + 11}`,
+      targetEmail: `audit-${String(index + 11).padStart(2, '0')}@example.com`,
+      occurredAt: `2026-07-01T05:${String(index + 10).padStart(2, '0')}:00.000Z`,
+    }));
+    mocks.listAdminAuditEvents.mockImplementation(async (input) =>
+      input?.cursor === 'cursor-page-2'
+        ? { items: secondPage }
+        : { items: firstPage, nextCursor: 'cursor-page-2' },
+    );
+    renderApp();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Lịch sử quản trị' }));
+    await screen.findByText('audit-01@example.com');
+
+    expect(screen.getByText('Đang xem 10 thao tác trên trang 1')).toBeInTheDocument();
+    expect(screen.queryByText('audit-11@example.com')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sau' }));
+
+    await waitFor(() =>
+      expect(mocks.listAdminAuditEvents).toHaveBeenLastCalledWith({
+        cursor: 'cursor-page-2',
+        limit: 10,
+      }),
+    );
+    expect(screen.getByText('Trang 2')).toBeInTheDocument();
+    expect(screen.getByText('Đang xem 2 thao tác trên trang 2')).toBeInTheDocument();
+    expect(screen.getByText('audit-11@example.com')).toBeInTheDocument();
+    expect(screen.getByText('audit-12@example.com')).toBeInTheDocument();
+    expect(screen.queryByText('audit-01@example.com')).not.toBeInTheDocument();
   });
 });

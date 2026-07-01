@@ -60,6 +60,7 @@ interface ListAdminUsersResponse {
 
 interface ListAdminAuditEventsResponse {
   items: AdminAuditEvent[];
+  nextCursor?: string;
 }
 
 interface AdminUserItemResponse {
@@ -97,7 +98,25 @@ export async function runAdminUserAction(
   return response.item;
 }
 
-export async function listAdminAuditEvents(): Promise<AdminAuditEvent[]> {
-  const response = await apiFetch<ListAdminAuditEventsResponse>('/admin/users/audit-events');
-  return response.items;
+export interface ListAdminAuditEventsInput {
+  query?: string;
+  action?: AdminAuditAction;
+  outcome?: AdminAuditEvent['outcome'];
+  limit?: number;
+  cursor?: string;
+}
+
+export async function listAdminAuditEvents(
+  input: ListAdminAuditEventsInput = {},
+): Promise<ListAdminAuditEventsResponse> {
+  const params = new URLSearchParams();
+  if (input.query?.trim()) params.set('query', input.query.trim());
+  if (input.action) params.set('action', input.action);
+  if (input.outcome) params.set('outcome', input.outcome);
+  if (input.limit) params.set('limit', String(input.limit));
+  if (input.cursor) params.set('cursor', input.cursor);
+  const queryString = params.toString();
+  return apiFetch<ListAdminAuditEventsResponse>(
+    `/admin/users/audit-events${queryString ? `?${queryString}` : ''}`,
+  );
 }

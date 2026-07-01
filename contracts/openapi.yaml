@@ -131,7 +131,46 @@ paths:
   /admin/users/audit-events:
     get:
       operationId: listAdminAuditEvents
-      summary: Liệt kê 10 sự kiện quản trị người dùng gần nhất cho System Admin
+      summary: Liệt kê lịch sử quản trị người dùng cho System Admin
+      parameters:
+        - name: query
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Lọc theo email người thực hiện, id người thực hiện hoặc email tài khoản.
+        - name: action
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              [
+                ADMIN_USER_CREATED,
+                ADMIN_USER_UPDATED,
+                ADMIN_USER_DISABLED,
+                ADMIN_USER_ENABLED,
+                ADMIN_USER_PASSWORD_RESET,
+              ]
+        - name: outcome
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [SUCCESS, REJECTED, FAILED]
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 10
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
       responses:
         '200':
           description: Lịch sử thao tác quản trị người dùng
@@ -145,6 +184,9 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/AdminAuditEvent'
+                  nextCursor:
+                    type: string
+                    description: Cursor để lấy trang kế tiếp, nếu còn dữ liệu.
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':

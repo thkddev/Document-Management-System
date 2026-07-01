@@ -560,9 +560,28 @@ Bảng này chỉ là baseline và phải được thay bằng permission matrix
 - [x] Cập nhật OpenAPI contract và CDK route/IAM tương ứng.
 - [x] Bổ sung unit test cho service audit, handler API, client API, UI và CDK.
 
-### Các bước sau P7.9
+### P7.10 - Lọc và phân trang lịch sử quản trị
 
-- [ ] P7.10 - Cân nhắc bộ lọc/phân trang/export cho lịch sử quản trị nếu danh sách thao tác tăng nhiều.
+- [x] Lọc theo email người thực hiện hoặc tài khoản bị tác động.
+- [x] Lọc theo loại thao tác quản trị.
+- [x] Lọc theo kết quả thao tác.
+- [x] Phân trang cục bộ 10 dòng/trang.
+- [x] Empty state riêng khi bộ lọc không có kết quả.
+- [x] Test UI cho lọc và phân trang lịch sử quản trị.
+
+### P7.11 - Backend filter và cursor pagination cho lịch sử quản trị
+
+- [x] API `GET /admin/users/audit-events` nhận `query`, `action`, `outcome`, `limit`, `cursor`.
+- [x] Backend trả `{ items, nextCursor }`.
+- [x] Service audit query DynamoDB theo cursor và lọc trong Lambda theo phạm vi gọn.
+- [x] Frontend gọi API lại khi đổi filter.
+- [x] Frontend phân trang bằng `nextCursor` và stack cursor cục bộ.
+- [x] Cập nhật OpenAPI contract.
+- [x] Bổ sung test backend service/handler, frontend client và App.
+
+### Các bước sau P7.11
+
+- [ ] P7.12 - Cân nhắc GSI/export hoặc lọc theo ngày nếu audit log tăng rất lớn.
 
 ### Quality gate
 
@@ -757,5 +776,7 @@ DMS MVP chỉ được xem là hoàn thành khi:
 
 | Ngày       | Thay đổi                              | Người cập nhật |
 | ---------- | ------------------------------------- | -------------- |
+| 2026-07-01 | Hoàn tất P7.11 backend filter và cursor pagination cho lịch sử quản trị | Codex          |
+| 2026-07-01 | Hoàn tất P7.10 lọc và phân trang lịch sử quản trị | Codex          |
 | 2026-07-01 | Hoàn tất P7.9 lịch sử quản trị người dùng | Codex          |
 | 2026-06-19 | Khởi tạo kế hoạch triển khai tổng thể | Codex          |

@@ -1,5 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { PutItemCommand, QueryCommand, type DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import {
+  PutItemCommand,
+  QueryCommand,
+  type AttributeValue,
+  type DynamoDBClient,
+} from '@aws-sdk/client-dynamodb';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import type {
   AdminAuditAction,
@@ -11,6 +16,8 @@ import type {
 import { AdminUsersForbiddenError, canListAdminUsers } from './admin-users.js';
 
 const ADMIN_AUDIT_PK = 'ADMIN_AUDIT';
+const DEFAULT_LIST_LIMIT = 10;
+const MAX_LIST_LIMIT = 50;
 
 export interface WriteAdminAuditEventInput {
   action: AdminAuditAction;
@@ -29,6 +36,19 @@ export interface AdminAuditDeps {
   tableName: string;
   now?: () => Date;
   createId?: () => string;
+}
+
+export interface ListAdminAuditEventsInput {
+  query?: string;
+  action?: AdminAuditAction;
+  outcome?: AuditOutcome;
+  limit?: number;
+  cursor?: string;
+}
+
+export interface ListAdminAuditEventsResult {
+  items: AdminAuditEvent[];
+  nextCursor?: string;
 }
 
 export async function writeAdminAuditEvent(
@@ -74,25 +94,88 @@ export async function writeAdminAuditEvent(
 export async function listAdminAuditEvents(
   principal: DocumentPrincipal,
   deps: AdminAuditDeps,
-): Promise<AdminAuditEvent[]> {
+  input: ListAdminAuditEventsInput = {},
+): Promise<ListAdminAuditEventsResult> {
   if (!canListAdminUsers(principal)) {
     throw new AdminUsersForbiddenError();
   }
 
-  const response = await deps.dynamodb.send(
-    new QueryCommand({
-      TableName: deps.tableName,
-      KeyConditionExpression: 'pk = :pk AND begins_with(sk, :auditPrefix)',
-      ExpressionAttributeValues: marshall({
-        ':pk': ADMIN_AUDIT_PK,
-        ':auditPrefix': 'AUDIT#',
-      }),
-      ScanIndexForward: false,
-      Limit: 10,
-    }),
-  );
+  const limit = normalizeLimit(input.limit);
+  const items: AdminAuditEvent[] = [];
+  let exclusiveStartKey = decodeCursor(input.cursor);
+  let nextCursor: string | undefined;
 
-  return (response.Items ?? []).map((item) => toAdminAuditEvent(unmarshall(item)));
+  do {
+    const response = await deps.dynamodb.send(
+      new QueryCommand({
+        TableName: deps.tableName,
+        KeyConditionExpression: 'pk = :pk AND begins_with(sk, :auditPrefix)',
+        ExpressionAttributeValues: marshall({
+          ':pk': ADMIN_AUDIT_PK,
+          ':auditPrefix': 'AUDIT#',
+        }),
+        ExclusiveStartKey: exclusiveStartKey,
+        ScanIndexForward: false,
+        Limit: limit,
+      }),
+    );
+
+    const matchedItems = (response.Items ?? [])
+      .map((item) => toAdminAuditEvent(unmarshall(item)))
+      .filter((event) => matchesAdminAuditFilters(event, input));
+    items.push(...matchedItems);
+    exclusiveStartKey = response.LastEvaluatedKey;
+    nextCursor = exclusiveStartKey ? encodeCursor(exclusiveStartKey) : undefined;
+  } while (items.length < limit && exclusiveStartKey);
+
+  const result: ListAdminAuditEventsResult = {
+    items: items.slice(0, limit),
+  };
+  if (nextCursor) result.nextCursor = nextCursor;
+  return result;
+}
+
+function normalizeLimit(limit: number | undefined): number {
+  if (!Number.isInteger(limit) || !limit || limit < 1) return DEFAULT_LIST_LIMIT;
+  return Math.min(limit, MAX_LIST_LIMIT);
+}
+
+function matchesAdminAuditFilters(
+  event: AdminAuditEvent,
+  input: ListAdminAuditEventsInput,
+): boolean {
+  const normalizedQuery = input.query?.trim().toLocaleLowerCase('vi');
+  const searchable = [
+    event.actorEmail,
+    event.actorId,
+    event.targetEmail,
+    event.targetDepartmentId,
+    ...(event.targetRoles ?? []),
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLocaleLowerCase('vi');
+
+  return (
+    (!normalizedQuery || searchable.includes(normalizedQuery)) &&
+    (!input.action || event.action === input.action) &&
+    (!input.outcome || event.outcome === input.outcome)
+  );
+}
+
+function encodeCursor(key: Record<string, AttributeValue>): string {
+  return Buffer.from(JSON.stringify(key), 'utf8').toString('base64url');
+}
+
+function decodeCursor(cursor: string | undefined): Record<string, AttributeValue> | undefined {
+  if (!cursor) return undefined;
+  try {
+    const parsed = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined;
+    return parsed as Record<string, AttributeValue>;
+  } catch {
+    return undefined;
+  }
 }
 
 function toAdminAuditEvent(item: Record<string, unknown>): AdminAuditEvent {

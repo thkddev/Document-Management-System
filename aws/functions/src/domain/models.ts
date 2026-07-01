@@ -87,6 +87,7 @@ export interface AdminAuditEvent {
 
 export interface ListAdminAuditEventsResponse {
   items: AdminAuditEvent[];
+  nextCursor?: string;
 }
 
 export const documentClassifications = [

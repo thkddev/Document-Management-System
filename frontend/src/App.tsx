@@ -35,6 +35,7 @@ import {
   runAdminUserAction,
   updateAdminUser,
   type AdminAuditEvent,
+  type ListAdminAuditEventsInput,
   type AdminUserRole,
   type AdminUserSummary,
 } from './lib/admin-users';
@@ -77,6 +78,8 @@ type MainView =
 type NotificationTone = 'INFO' | 'SUCCESS' | 'WARNING' | 'DANGER';
 type AdminRoleFilter = 'ALL' | 'SYSTEM_ADMIN' | 'DEPARTMENT_ADMIN' | 'EMPLOYEE';
 type AdminStatusFilter = 'ALL' | 'ACTIVE' | 'LOCKED';
+type AdminAuditActionFilter = 'ALL' | AdminAuditEvent['action'];
+type AdminAuditOutcomeFilter = 'ALL' | AdminAuditEvent['outcome'];
 type AdminRole = AdminUserRole;
 
 interface AppNotification {
@@ -311,6 +314,28 @@ const adminAuditActionLabels: Record<AdminAuditEvent['action'], string> = {
   ADMIN_USER_PASSWORD_RESET: 'Reset mật khẩu',
 };
 
+const adminAuditActionFilters: Array<{ value: AdminAuditActionFilter; label: string }> = [
+  { value: 'ALL', label: 'Tất cả thao tác' },
+  { value: 'ADMIN_USER_CREATED', label: 'Tạo người dùng' },
+  { value: 'ADMIN_USER_UPDATED', label: 'Đổi phòng ban/vai trò' },
+  { value: 'ADMIN_USER_DISABLED', label: 'Khóa tài khoản' },
+  { value: 'ADMIN_USER_ENABLED', label: 'Mở khóa tài khoản' },
+  { value: 'ADMIN_USER_PASSWORD_RESET', label: 'Reset mật khẩu' },
+];
+
+const adminAuditOutcomeLabels: Record<AdminAuditEvent['outcome'], string> = {
+  SUCCESS: 'Thành công',
+  REJECTED: 'Bị từ chối',
+  FAILED: 'Thất bại',
+};
+
+const adminAuditOutcomeFilters: Array<{ value: AdminAuditOutcomeFilter; label: string }> = [
+  { value: 'ALL', label: 'Tất cả kết quả' },
+  { value: 'SUCCESS', label: 'Thành công' },
+  { value: 'REJECTED', label: 'Bị từ chối' },
+  { value: 'FAILED', label: 'Thất bại' },
+];
+
 const defaultCreateAdminUserForm: CreateAdminUserForm = {
   email: '',
   name: '',
@@ -368,6 +393,7 @@ const documentSortOptions: Array<{ value: DocumentSort; label: string }> = [
 ];
 
 const documentPageSizeOptions = [10, 20, 50] as const;
+const adminAuditPageSize = 10;
 const seenNotificationsStorageKey = 'dms:seen-notifications';
 const bookmarkedDocumentsStorageKey = 'dms:bookmarked-documents';
 const storageQuotaBytes = 50 * 1024 ** 3;
@@ -664,6 +690,16 @@ export function App() {
   const [adminAuditEvents, setAdminAuditEvents] = useState<AdminAuditEvent[]>([]);
   const [adminAuditLoading, setAdminAuditLoading] = useState(false);
   const [adminAuditError, setAdminAuditError] = useState('');
+  const [adminAuditQuery, setAdminAuditQuery] = useState('');
+  const [debouncedAdminAuditQuery, setDebouncedAdminAuditQuery] = useState('');
+  const [adminAuditActionFilter, setAdminAuditActionFilter] =
+    useState<AdminAuditActionFilter>('ALL');
+  const [adminAuditOutcomeFilter, setAdminAuditOutcomeFilter] =
+    useState<AdminAuditOutcomeFilter>('ALL');
+  const [adminAuditPage, setAdminAuditPage] = useState(1);
+  const [adminAuditCursor, setAdminAuditCursor] = useState<string | undefined>();
+  const [adminAuditNextCursor, setAdminAuditNextCursor] = useState<string | undefined>();
+  const [adminAuditCursorStack, setAdminAuditCursorStack] = useState<string[]>([]);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploadTitle, setUploadTitle] = useState('');
@@ -706,6 +742,7 @@ export function App() {
   const shareReviewPanelRef = useRef<HTMLElement | null>(null);
   const documentMenuRef = useRef<HTMLDivElement | null>(null);
   const shareDepartmentSelectRef = useRef<HTMLSelectElement | null>(null);
+  const adminAuditRequestSeqRef = useRef(0);
 
   // currentUser luôn có giá trị khi App được render (ProtectedRoute đảm bảo điều này)
   const displayName = currentUser?.displayName ?? '';
@@ -835,6 +872,31 @@ export function App() {
     }),
     [adminUsers],
   );
+  const adminAuditFiltersActive =
+    adminAuditQuery.trim() !== '' ||
+    adminAuditActionFilter !== 'ALL' ||
+    adminAuditOutcomeFilter !== 'ALL';
+  const displayedAdminAuditEvents = useMemo(() => {
+    const normalized = adminAuditQuery.trim().toLocaleLowerCase('vi');
+    return adminAuditEvents.filter((event) => {
+      const searchable = [
+        event.actorEmail,
+        event.actorId,
+        event.targetEmail,
+        event.targetDepartmentId,
+        ...(event.targetRoles?.map((role) => adminRoleLabels[role]) ?? []),
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLocaleLowerCase('vi');
+
+      return (
+        (!normalized || searchable.includes(normalized)) &&
+        (adminAuditActionFilter === 'ALL' || event.action === adminAuditActionFilter) &&
+        (adminAuditOutcomeFilter === 'ALL' || event.outcome === adminAuditOutcomeFilter)
+      );
+    });
+  }, [adminAuditActionFilter, adminAuditEvents, adminAuditOutcomeFilter, adminAuditQuery]);
   const storageUsedBytes = documentSummaries.reduce(
     (total, document) => total + document.sizeBytes,
     0,
@@ -889,24 +951,48 @@ export function App() {
     }
   }, [canManageSystem]);
 
-  const refreshAdminAuditEvents = useCallback(async (): Promise<void> => {
+  const refreshAdminAuditEvents = useCallback(async (cursor?: string): Promise<void> => {
     if (!canManageSystem) {
       setAdminAuditEvents([]);
       setAdminAuditError('');
+      setAdminAuditCursor(undefined);
+      setAdminAuditNextCursor(undefined);
+      setAdminAuditCursorStack([]);
       return;
     }
 
     setAdminAuditLoading(true);
+    const requestSeq = ++adminAuditRequestSeqRef.current;
     try {
-      const items = await listAdminAuditEvents();
-      setAdminAuditEvents(items);
+      const input: ListAdminAuditEventsInput = {
+        limit: adminAuditPageSize,
+      };
+      if (cursor) input.cursor = cursor;
+      const normalizedQuery = debouncedAdminAuditQuery.trim();
+      if (normalizedQuery) input.query = normalizedQuery;
+      if (adminAuditActionFilter !== 'ALL') input.action = adminAuditActionFilter;
+      if (adminAuditOutcomeFilter !== 'ALL') input.outcome = adminAuditOutcomeFilter;
+
+      const response = await listAdminAuditEvents(input);
+      if (requestSeq !== adminAuditRequestSeqRef.current) return;
+      setAdminAuditEvents(response.items);
+      setAdminAuditCursor(cursor);
+      setAdminAuditNextCursor(response.nextCursor);
       setAdminAuditError('');
     } catch {
+      if (requestSeq !== adminAuditRequestSeqRef.current) return;
       setAdminAuditError('Không thể tải lịch sử quản trị. Vui lòng thử lại.');
     } finally {
-      setAdminAuditLoading(false);
+      if (requestSeq === adminAuditRequestSeqRef.current) setAdminAuditLoading(false);
     }
-  }, [canManageSystem]);
+  }, [adminAuditActionFilter, adminAuditOutcomeFilter, canManageSystem, debouncedAdminAuditQuery]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedAdminAuditQuery(adminAuditQuery);
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [adminAuditQuery]);
 
   const closeCreateUserModal = useCallback(() => {
     if (createUserSubmitting) return;
@@ -1073,7 +1159,9 @@ export function App() {
 
   useEffect(() => {
     if (isAdminAuditView && canManageSystem) {
-      void refreshAdminAuditEvents();
+      setAdminAuditPage(1);
+      setAdminAuditCursorStack([]);
+      void refreshAdminAuditEvents(undefined);
     }
   }, [canManageSystem, isAdminAuditView, refreshAdminAuditEvents]);
 
@@ -2076,7 +2164,7 @@ export function App() {
                   className="quiet-button"
                   type="button"
                   disabled={adminAuditLoading}
-                  onClick={() => void refreshAdminAuditEvents()}
+                  onClick={() => void refreshAdminAuditEvents(adminAuditCursor)}
                 >
                   <RefreshCw size={16} />
                   {adminAuditLoading ? 'Đang làm mới' : 'Làm mới'}
@@ -2089,6 +2177,60 @@ export function App() {
                   Lịch sử chỉ lưu metadata thao tác quản trị, không lưu mật khẩu, token hoặc dữ liệu
                   nhạy cảm.
                 </span>
+              </div>
+
+              <div className="admin-filters admin-audit-filters" aria-label="Lọc lịch sử quản trị">
+                <label>
+                  <span>Tìm kiếm</span>
+                  <input
+                    value={adminAuditQuery}
+                    onChange={(event) => setAdminAuditQuery(event.target.value)}
+                    placeholder="Email người thực hiện hoặc tài khoản"
+                  />
+                </label>
+                <label>
+                  <span>Thao tác</span>
+                  <select
+                    value={adminAuditActionFilter}
+                    onChange={(event) =>
+                      setAdminAuditActionFilter(event.target.value as AdminAuditActionFilter)
+                    }
+                  >
+                    {adminAuditActionFilters.map((filter) => (
+                      <option key={filter.value} value={filter.value}>
+                        {filter.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>Kết quả</span>
+                  <select
+                    value={adminAuditOutcomeFilter}
+                    onChange={(event) =>
+                      setAdminAuditOutcomeFilter(event.target.value as AdminAuditOutcomeFilter)
+                    }
+                  >
+                    {adminAuditOutcomeFilters.map((filter) => (
+                      <option key={filter.value} value={filter.value}>
+                        {filter.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  className="quiet-button"
+                  type="button"
+                  disabled={!adminAuditFiltersActive}
+                  onClick={() => {
+                    setAdminAuditQuery('');
+                    setDebouncedAdminAuditQuery('');
+                    setAdminAuditActionFilter('ALL');
+                    setAdminAuditOutcomeFilter('ALL');
+                  }}
+                >
+                  Xóa lọc
+                </button>
               </div>
 
               {adminAuditError && (
@@ -2110,7 +2252,7 @@ export function App() {
                   <span role="columnheader">Tài khoản</span>
                   <span role="columnheader">Kết quả</span>
                 </div>
-                {adminAuditEvents.map((event) => (
+                {displayedAdminAuditEvents.map((event) => (
                   <div className="admin-audit-row" role="row" key={event.eventId}>
                     <span role="cell">{formatUpdatedAt(event.occurredAt)}</span>
                     <span role="cell">{event.actorEmail || event.actorId}</span>
@@ -2126,18 +2268,61 @@ export function App() {
                       )}
                     </span>
                     <span className="admin-status admin-status--active" role="cell">
-                      {event.outcome === 'SUCCESS' ? 'Thành công' : event.outcome}
+                      {adminAuditOutcomeLabels[event.outcome]}
                     </span>
                   </div>
                 ))}
-                {!adminAuditLoading && adminAuditEvents.length === 0 && (
+                {!adminAuditLoading && displayedAdminAuditEvents.length === 0 && (
                   <div className="empty-state">
                     <History size={28} />
-                    <h3>Chưa có lịch sử quản trị</h3>
-                    <p>Các thao tác tạo user, đổi vai trò, khóa/mở khóa và reset mật khẩu sẽ xuất hiện tại đây.</p>
+                    <h3>
+                      {!adminAuditFiltersActive
+                        ? 'Chưa có lịch sử quản trị'
+                        : 'Không có lịch sử phù hợp'}
+                    </h3>
+                    <p>
+                      {!adminAuditFiltersActive
+                        ? 'Các thao tác tạo user, đổi vai trò, khóa/mở khóa và reset mật khẩu sẽ xuất hiện tại đây.'
+                        : 'Thử đổi từ khóa, thao tác hoặc kết quả để xem thêm lịch sử.'}
+                    </p>
                   </div>
                 )}
               </div>
+
+              {displayedAdminAuditEvents.length > 0 && (
+                <div className="document-pagination" aria-label="Phân trang lịch sử quản trị">
+                  <p>Đang xem {displayedAdminAuditEvents.length} thao tác trên trang {adminAuditPage}</p>
+                  <div>
+                    <button
+                      className="quiet-button"
+                      type="button"
+                      disabled={adminAuditCursorStack.length === 0}
+                      onClick={() => {
+                        const previousCursor = adminAuditCursorStack.at(-1) || undefined;
+                        setAdminAuditCursorStack((stack) => stack.slice(0, -1));
+                        setAdminAuditPage((page) => Math.max(1, page - 1));
+                        void refreshAdminAuditEvents(previousCursor);
+                      }}
+                    >
+                      Trước
+                    </button>
+                    <span>Trang {adminAuditPage}</span>
+                    <button
+                      className="quiet-button"
+                      type="button"
+                      disabled={!adminAuditNextCursor}
+                      onClick={() => {
+                        if (!adminAuditNextCursor) return;
+                        setAdminAuditCursorStack((stack) => [...stack, adminAuditCursor ?? '']);
+                        setAdminAuditPage((page) => page + 1);
+                        void refreshAdminAuditEvents(adminAuditNextCursor);
+                      }}
+                    >
+                      Sau
+                    </button>
+                  </div>
+                </div>
+              )}
             </section>
           )}
 

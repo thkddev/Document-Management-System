@@ -70,25 +70,95 @@ describe('admin audit service', () => {
         { userId: 'admin-1', departmentId: 'TECH', roles: ['SYSTEM_ADMIN'] },
         { dynamodb: { send } as never, tableName: 'dms-dev' },
       ),
-    ).resolves.toEqual([
-      {
-        eventId: 'event-1',
-        action: 'ADMIN_USER_CREATED',
-        actorId: 'admin-1',
-        actorEmail: 'admin@example.com',
-        targetEmail: 'user@example.com',
-        targetDepartmentId: 'TECH',
-        targetRoles: ['EMPLOYEE'],
-        outcome: 'SUCCESS',
-        occurredAt: '2026-07-01T05:00:00.000Z',
-        requestId: 'request-1',
-      },
-    ]);
+    ).resolves.toEqual({
+      items: [
+        {
+          eventId: 'event-1',
+          action: 'ADMIN_USER_CREATED',
+          actorId: 'admin-1',
+          actorEmail: 'admin@example.com',
+          targetEmail: 'user@example.com',
+          targetDepartmentId: 'TECH',
+          targetRoles: ['EMPLOYEE'],
+          outcome: 'SUCCESS',
+          occurredAt: '2026-07-01T05:00:00.000Z',
+          requestId: 'request-1',
+        },
+      ],
+    });
 
     const command = (send.mock.calls as unknown as [[QueryCommand]])[0]?.[0];
     expect(command).toBeInstanceOf(QueryCommand);
     if (!command) throw new Error('QueryCommand was not sent');
     expect(command.input).toMatchObject({ ScanIndexForward: false, Limit: 10 });
+  });
+
+  it('lá»c audit theo query/action/outcome vÃ  tráº£ next cursor khi cÃ²n trang sau', async () => {
+    const send = vi
+      .fn()
+      .mockResolvedValueOnce({
+        Items: [
+          {
+            eventId: { S: 'event-1' },
+            action: { S: 'ADMIN_USER_CREATED' },
+            actorId: { S: 'admin-1' },
+            targetEmail: { S: 'other@example.com' },
+            outcome: { S: 'SUCCESS' },
+            occurredAt: { S: '2026-07-01T05:00:00.000Z' },
+          },
+        ],
+        LastEvaluatedKey: {
+          pk: { S: 'ADMIN_AUDIT' },
+          sk: { S: 'AUDIT#2026-07-01T05:00:00.000Z#event-1' },
+        },
+      })
+      .mockResolvedValueOnce({
+        Items: [
+          {
+            eventId: { S: 'event-2' },
+            action: { S: 'ADMIN_USER_DISABLED' },
+            actorId: { S: 'admin-1' },
+            actorEmail: { S: 'admin@example.com' },
+            targetEmail: { S: 'target@example.com' },
+            outcome: { S: 'SUCCESS' },
+            occurredAt: { S: '2026-07-01T05:01:00.000Z' },
+          },
+        ],
+        LastEvaluatedKey: {
+          pk: { S: 'ADMIN_AUDIT' },
+          sk: { S: 'AUDIT#2026-07-01T05:01:00.000Z#event-2' },
+        },
+      });
+
+    const result = await listAdminAuditEvents(
+      { userId: 'admin-1', departmentId: 'TECH', roles: ['SYSTEM_ADMIN'] },
+      { dynamodb: { send } as never, tableName: 'dms-dev' },
+      {
+        query: 'target',
+        action: 'ADMIN_USER_DISABLED',
+        outcome: 'SUCCESS',
+        limit: 1,
+      },
+    );
+
+    expect(result.items).toEqual([
+      {
+        eventId: 'event-2',
+        action: 'ADMIN_USER_DISABLED',
+        actorId: 'admin-1',
+        actorEmail: 'admin@example.com',
+        targetEmail: 'target@example.com',
+        outcome: 'SUCCESS',
+        occurredAt: '2026-07-01T05:01:00.000Z',
+      },
+    ]);
+    expect(result.nextCursor).toEqual(expect.any(String));
+    expect(send).toHaveBeenCalledTimes(2);
+    const secondCommand = (send.mock.calls as unknown as [[QueryCommand], [QueryCommand]])[1]?.[0];
+    expect(secondCommand.input.ExclusiveStartKey).toEqual({
+      pk: { S: 'ADMIN_AUDIT' },
+      sk: { S: 'AUDIT#2026-07-01T05:00:00.000Z#event-1' },
+    });
   });
 
   it('từ chối user không phải System Admin', async () => {

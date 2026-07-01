@@ -355,17 +355,20 @@ describe('GET /admin/users handler', () => {
   });
 
   it('tráº£ lá»‹ch sá»­ quáº£n trá»‹ cho System Admin', async () => {
-    listAdminAuditEvents.mockResolvedValue([
-      {
-        eventId: 'event-1',
-        action: 'ADMIN_USER_CREATED',
-        actorId: 'admin-1',
-        actorEmail: 'admin@example.com',
-        targetEmail: 'user@example.com',
-        outcome: 'SUCCESS',
-        occurredAt: '2026-07-01T05:00:00.000Z',
-      },
-    ]);
+    listAdminAuditEvents.mockResolvedValue({
+      items: [
+        {
+          eventId: 'event-1',
+          action: 'ADMIN_USER_CREATED',
+          actorId: 'admin-1',
+          actorEmail: 'admin@example.com',
+          targetEmail: 'user@example.com',
+          outcome: 'SUCCESS',
+          occurredAt: '2026-07-01T05:00:00.000Z',
+        },
+      ],
+      nextCursor: 'cursor-2',
+    });
     const event = createEvent({
       sub: 'admin-1',
       email: 'admin@example.com',
@@ -375,6 +378,13 @@ describe('GET /admin/users handler', () => {
     event.resource = '/admin/users/audit-events';
     event.path = '/admin/users/audit-events';
     event.requestContext.resourcePath = '/admin/users/audit-events';
+    event.queryStringParameters = {
+      query: 'user@example.com',
+      action: 'ADMIN_USER_CREATED',
+      outcome: 'SUCCESS',
+      limit: '10',
+      cursor: 'cursor-1',
+    };
 
     const response = await handler(event, {} as never, () => undefined);
 
@@ -391,6 +401,7 @@ describe('GET /admin/users handler', () => {
           occurredAt: '2026-07-01T05:00:00.000Z',
         },
       ],
+      nextCursor: 'cursor-2',
     });
     expect(listAdminAuditEvents).toHaveBeenCalledWith(
       {
@@ -400,6 +411,13 @@ describe('GET /admin/users handler', () => {
         roles: ['SYSTEM_ADMIN'],
       },
       expect.objectContaining({ tableName: 'table-1' }),
+      {
+        query: 'user@example.com',
+        action: 'ADMIN_USER_CREATED',
+        outcome: 'SUCCESS',
+        limit: 10,
+        cursor: 'cursor-1',
+      },
     );
   });
 });

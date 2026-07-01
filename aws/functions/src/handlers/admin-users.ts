@@ -1,12 +1,14 @@
 import { CognitoIdentityProviderClient } from '@aws-sdk/client-cognito-identity-provider';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import type { APIGatewayProxyHandler, APIGatewayProxyResult } from 'aws-lambda';
+import type { APIGatewayProxyEvent, APIGatewayProxyHandler, APIGatewayProxyResult } from 'aws-lambda';
 import type {
   AdminAuditAction,
   AdminUserActionRequest,
+  AuditOutcome,
   CreateAdminUserRequest,
   UpdateAdminUserRequest,
 } from '../domain/models.js';
+import { adminAuditActions } from '../domain/models.js';
 import { documentPrincipalFromClaims } from '../shared/auth.js';
 import { errorResponse, jsonResponse } from '../shared/http.js';
 import {
@@ -73,6 +75,42 @@ function adminAuditActionForRequest(action: AdminUserActionRequest['action']): A
   return 'ADMIN_USER_PASSWORD_RESET';
 }
 
+function parseAdminAuditListRequest(
+  query: APIGatewayProxyEvent['queryStringParameters'],
+): {
+  query?: string;
+  action?: AdminAuditAction;
+  outcome?: AuditOutcome;
+  limit?: number;
+  cursor?: string;
+} {
+  const input: {
+    query?: string;
+    action?: AdminAuditAction;
+    outcome?: AuditOutcome;
+    limit?: number;
+    cursor?: string;
+  } = {};
+  const search = query?.query?.trim();
+  if (search) input.query = search;
+  if (query?.action && (adminAuditActions as readonly string[]).includes(query.action)) {
+    input.action = query.action as AdminAuditAction;
+  }
+  if (
+    query?.outcome === 'SUCCESS' ||
+    query?.outcome === 'REJECTED' ||
+    query?.outcome === 'FAILED'
+  ) {
+    input.outcome = query.outcome;
+  }
+  if (query?.limit) {
+    const limit = Number.parseInt(query.limit, 10);
+    if (Number.isFinite(limit)) input.limit = limit;
+  }
+  if (query?.cursor) input.cursor = query.cursor;
+  return input;
+}
+
 export const handler: APIGatewayProxyHandler = async (event): Promise<APIGatewayProxyResult> => {
   const requestId = event.requestContext.requestId;
   const principal = documentPrincipalFromClaims(event.requestContext.authorizer?.claims);
@@ -117,11 +155,15 @@ export const handler: APIGatewayProxyHandler = async (event): Promise<APIGateway
           requestId,
         });
       }
-      const items = await listAdminAuditEvents(principal, {
-        dynamodb,
-        tableName: process.env.TABLE_NAME,
-      });
-      return jsonResponse(200, { items });
+      const result = await listAdminAuditEvents(
+        principal,
+        {
+          dynamodb,
+          tableName: process.env.TABLE_NAME,
+        },
+        parseAdminAuditListRequest(event.queryStringParameters),
+      );
+      return jsonResponse(200, result);
     }
 
     if (event.resource === '/admin/users/actions') {

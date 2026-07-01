@@ -114,7 +114,7 @@ describe('admin users client', () => {
     });
   });
 
-  it('fetches admin audit events', async () => {
+  it('fetches admin audit events with filters and cursor', async () => {
     const items = [
       {
         eventId: 'event-1',
@@ -126,9 +126,19 @@ describe('admin users client', () => {
         occurredAt: '2026-07-01T05:00:00.000Z',
       },
     ];
-    apiFetch.mockResolvedValue({ items });
+    apiFetch.mockResolvedValue({ items, nextCursor: 'cursor-2' });
 
-    await expect(listAdminAuditEvents()).resolves.toEqual(items);
-    expect(apiFetch).toHaveBeenCalledWith('/admin/users/audit-events');
+    await expect(
+      listAdminAuditEvents({
+        query: 'user@example.com',
+        action: 'ADMIN_USER_CREATED',
+        outcome: 'SUCCESS',
+        limit: 10,
+        cursor: 'cursor-1',
+      }),
+    ).resolves.toEqual({ items, nextCursor: 'cursor-2' });
+    expect(apiFetch).toHaveBeenCalledWith(
+      '/admin/users/audit-events?query=user%40example.com&action=ADMIN_USER_CREATED&outcome=SUCCESS&limit=10&cursor=cursor-1',
+    );
   });
 });
